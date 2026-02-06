@@ -9,10 +9,9 @@ from typing import Any
 
 import httpx
 
-from .config import get_settings
+from .config import settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 async def send_email_notification(
