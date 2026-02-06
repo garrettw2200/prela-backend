@@ -25,7 +25,8 @@ from .database import (
     verify_api_key,
     update_api_key_last_used,
 )
-from .kafka import get_consumer, get_kafka_config, get_producer, send_message
+# Kafka removed from infrastructure - direct ClickHouse writes instead
+# from .kafka import get_consumer, get_kafka_config, get_producer, send_message
 from .redis import (
     cache_delete,
     cache_get,
@@ -66,10 +67,6 @@ __all__ = [
     "reset_monthly_usage",
     "verify_api_key",
     "update_api_key_last_used",
-    "get_producer",
-    "get_consumer",
-    "get_kafka_config",
-    "send_message",
     "get_redis_client",
     "cache_get",
     "cache_set",
