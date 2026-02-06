@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  # PostgreSQL for user data, auth, etc.
+  postgres:
+    image: postgres:16-alpine
+    container_name: prela-postgres
+    environment:
+      POSTGRES_USER: prela
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: prela
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prela"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ClickHouse for trace/span storage
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.1
+    container_name: prela-clickhouse
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native protocol
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: prela
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: localdev
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching, session storage
+  redis:
+    image: redis:7-alpine
+    container_name: prela-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redpanda as lightweight Kafka replacement for local dev
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: prela-redpanda
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+    ports:
+      - "19092:19092"  # Kafka API (external)
+      - "18082:18082"  # Pandaproxy (external)
+      - "18081:18081"  # Schema Registry (external)
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Redpanda Console for Kafka UI
+  redpanda-console:
+    image: redpandadata/console:latest
+    container_name: prela-redpanda-console
+    entrypoint: /bin/sh
+    command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redpanda
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+  redis_data:
+  redpanda_data:
+
+networks:
+  default:
+    name: prela-network

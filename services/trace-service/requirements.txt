@@ -1,0 +1,5 @@
+# Trace Service dependencies
+pydantic==2.5.3
+pydantic-settings==2.1.0
+clickhouse-connect==0.6.23
+aiokafka==0.10.0

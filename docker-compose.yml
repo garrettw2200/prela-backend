@@ -1,0 +1,49 @@
+# Legacy docker-compose.yml - DEPRECATED
+# Please use docker-compose.local.yml for local development
+#
+# The new docker-compose.local.yml includes:
+# - PostgreSQL 16
+# - ClickHouse 24.1 (for trace storage)
+# - Redis 7
+# - Redpanda (Kafka-compatible message queue)
+# - Redpanda Console (Kafka UI at http://localhost:8080)
+#
+# Usage:
+#   docker-compose -f docker-compose.local.yml up -d
+#
+# See backend/README.md for full setup instructions.
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prela
+      POSTGRES_USER: prela
+      POSTGRES_PASSWORD: prela_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prela"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
