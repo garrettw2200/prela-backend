@@ -7,3 +7,6 @@ clickhouse-connect==0.6.23
 redis==5.0.1
 asyncpg==0.29.0
 httpx==0.26.0
+openai==1.12.0
+scikit-learn==1.4.0
+numpy==1.26.3
