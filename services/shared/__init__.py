@@ -4,6 +4,8 @@ from .config import settings
 from .clickhouse import (
     get_clickhouse_client,
     init_clickhouse_schema,
+    insert_span,
+    insert_trace,
     query_spans,
     query_traces,
 )
@@ -49,6 +51,8 @@ __all__ = [
     "settings",
     "get_clickhouse_client",
     "init_clickhouse_schema",
+    "insert_span",
+    "insert_trace",
     "query_spans",
     "query_traces",
     "get_database_pool",

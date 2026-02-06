@@ -8,37 +8,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import api_keys, billing, cost_optimization, drift, errors, health, multi_agent, n8n, projects, replay, traces
 from .websocket import websocket_endpoint
-from shared import get_producer, settings
+from shared import settings
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
-
-# Global Kafka producer
-kafka_producer = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    global kafka_producer
-
     logger.info(f"Starting API Gateway ({settings.environment})")
 
-    # Initialize Kafka producer for n8n routes
-    try:
-        kafka_producer = await get_producer()
-        n8n.set_kafka_producer(kafka_producer)
-        logger.info("Kafka producer initialized for n8n routes")
-    except Exception as e:
-        logger.warning(f"Failed to initialize Kafka producer: {e}")
-        logger.warning("n8n routes will not function without Kafka")
-
     yield
-
-    # Cleanup
-    if kafka_producer:
-        await kafka_producer.stop()
-        logger.info("Kafka producer stopped")
 
     logger.info("Shutting down API Gateway")
 

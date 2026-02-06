@@ -9,22 +9,13 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from shared import cache_delete, cache_get, cache_set, get_producer, send_message, settings
-from shared.clickhouse import get_clickhouse_client
+from shared import cache_delete, cache_get, cache_set, settings
+from shared.clickhouse import get_clickhouse_client, insert_span, insert_trace
 from shared.validation import InputValidator
 from shared.webhook_rate_limiter import get_webhook_rate_limiter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Global Kafka producer (initialized in main.py lifespan)
-kafka_producer = None
-
-
-def set_kafka_producer(producer):
-    """Set global Kafka producer instance."""
-    global kafka_producer
-    kafka_producer = producer
 
 
 # Authentication dependency
@@ -233,13 +224,9 @@ async def start_n8n_trace(
         mapping = json.dumps({"trace_id": trace_id, "span_id": span_id})
         await cache_set(f"n8n:execution:{request.execution_id}", mapping, ttl=86400)
 
-        # Send to Kafka for processing
-        await send_message(
-            kafka_producer,
-            "traces",
-            trace_data,
-            key=request.project_id,
-        )
+        # Insert trace directly to ClickHouse
+        client = get_clickhouse_client()
+        await insert_trace(client, trace_data)
 
         logger.info(f"n8n trace started: {trace_id} (execution: {request.execution_id})")
 
@@ -288,13 +275,9 @@ async def end_n8n_trace(
         if request.error_message:
             update_data["error_message"] = request.error_message
 
-        # Send update to Kafka
-        await send_message(
-            kafka_producer,
-            "spans",
-            update_data,
-            key=request.project_id,
-        )
+        # Insert span update to ClickHouse
+        client = get_clickhouse_client()
+        await insert_span(client, update_data)
 
         # Clean up mapping after a delay (keep for 1 more hour for late spans)
         await cache_set(
@@ -377,13 +360,9 @@ async def log_n8n_span(
         if events:
             span_data["events"] = events
 
-        # Send to Kafka
-        await send_message(
-            kafka_producer,
-            "spans",
-            span_data,
-            key=request.project_id,
-        )
+        # Insert span to ClickHouse
+        client = get_clickhouse_client()
+        await insert_span(client, span_data)
 
         logger.debug(f"n8n span logged: {span_id} ({request.span_name})")
 
@@ -466,13 +445,9 @@ async def log_n8n_ai_call(
         if request.latency_ms:
             span_data["attributes"]["llm.latency_ms"] = request.latency_ms
 
-        # Send to Kafka
-        await send_message(
-            kafka_producer,
-            "spans",
-            span_data,
-            key=request.project_id,
-        )
+        # Insert span to ClickHouse
+        client = get_clickhouse_client()
+        await insert_span(client, span_data)
 
         logger.debug(
             f"n8n AI call logged: {span_id} "
@@ -622,14 +597,10 @@ async def n8n_webhook_ingest(
 
             spans_created.append(node_span)
 
-        # Send all spans to Kafka
+        # Insert all spans to ClickHouse
+        client = get_clickhouse_client()
         for span in spans_created:
-            await send_message(
-                kafka_producer,
-                "spans",
-                span,
-                key=span["project_id"],
-            )
+            await insert_span(client, span)
 
         logger.info(
             f"n8n webhook processed: {trace_id} "

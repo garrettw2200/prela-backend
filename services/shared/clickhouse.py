@@ -415,3 +415,107 @@ async def query_spans(
 
     result = client.query(query, parameters={"trace_id": trace_id})
     return result.result_rows
+
+
+async def insert_trace(client: Client, trace_data: dict[str, Any]) -> None:
+    """Insert a trace record into ClickHouse.
+
+    Args:
+        client: ClickHouse client instance.
+        trace_data: Trace data dictionary.
+    """
+    import json
+    from datetime import datetime
+
+    # Parse or use current timestamp
+    started_at = trace_data.get("started_at")
+    if isinstance(started_at, str):
+        started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    elif started_at is None:
+        started_at = datetime.utcnow()
+
+    completed_at = trace_data.get("ended_at") or trace_data.get("completed_at")
+    if isinstance(completed_at, str):
+        completed_at = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+
+    # Calculate duration if not provided
+    duration_ms = trace_data.get("duration_ms", 0)
+    if duration_ms == 0 and completed_at:
+        duration_ms = (completed_at - started_at).total_seconds() * 1000
+
+    client.insert(
+        "traces",
+        [[
+            trace_data.get("trace_id", ""),
+            trace_data.get("project_id", ""),
+            trace_data.get("service_name", trace_data.get("attributes", {}).get("service.name", "")),
+            started_at,
+            completed_at,
+            duration_ms,
+            trace_data.get("status", "running"),
+            trace_data.get("span_id", ""),  # root_span_id
+            trace_data.get("span_count", 1),
+            json.dumps(trace_data.get("attributes", {})),
+        ]],
+        column_names=[
+            "trace_id", "project_id", "service_name", "started_at",
+            "completed_at", "duration_ms", "status", "root_span_id",
+            "span_count", "attributes"
+        ]
+    )
+    logger.debug(f"Inserted trace: {trace_data.get('trace_id')}")
+
+
+async def insert_span(client: Client, span_data: dict[str, Any]) -> None:
+    """Insert a span record into ClickHouse.
+
+    Args:
+        client: ClickHouse client instance.
+        span_data: Span data dictionary.
+    """
+    import json
+    from datetime import datetime
+
+    # Parse or use current timestamp
+    started_at = span_data.get("started_at")
+    if isinstance(started_at, str):
+        started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    elif started_at is None:
+        started_at = datetime.utcnow()
+
+    ended_at = span_data.get("ended_at")
+    if isinstance(ended_at, str):
+        ended_at = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
+    elif ended_at is None:
+        ended_at = started_at
+
+    # Calculate duration if not provided
+    duration_ms = span_data.get("duration_ms", 0)
+    if duration_ms == 0 and ended_at:
+        duration_ms = (ended_at - started_at).total_seconds() * 1000
+
+    client.insert(
+        "spans",
+        [[
+            span_data.get("span_id", ""),
+            span_data.get("trace_id", ""),
+            span_data.get("project_id", ""),
+            span_data.get("parent_span_id", ""),
+            span_data.get("name", ""),
+            span_data.get("span_type", "custom"),
+            span_data.get("service_name", span_data.get("attributes", {}).get("service.name", "")),
+            started_at,
+            ended_at,
+            duration_ms,
+            span_data.get("status", "completed"),
+            json.dumps(span_data.get("attributes", {})),
+            json.dumps(span_data.get("events", [])),
+            json.dumps(span_data.get("replay_snapshot", {})) if span_data.get("replay_snapshot") else "",
+        ]],
+        column_names=[
+            "span_id", "trace_id", "project_id", "parent_span_id", "name",
+            "span_type", "service_name", "started_at", "ended_at",
+            "duration_ms", "status", "attributes", "events", "replay_snapshot"
+        ]
+    )
+    logger.debug(f"Inserted span: {span_data.get('span_id')}")
