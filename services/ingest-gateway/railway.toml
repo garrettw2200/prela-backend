@@ -1,6 +1,7 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "services/ingest-gateway/Dockerfile"
+watchPatterns = ["services/ingest-gateway/**", "services/shared/**"]
 
 [deploy]
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
