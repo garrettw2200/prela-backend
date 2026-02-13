@@ -199,7 +199,8 @@ async def ingest_trace(
         }
 
         # Insert trace
-        clickhouse_client.insert("traces", [trace_row])
+        trace_columns = list(trace_row.keys())
+        clickhouse_client.insert("traces", [list(trace_row.values())], column_names=trace_columns)
 
         # Insert spans if present
         spans = trace_data.get("spans", [])
@@ -225,7 +226,12 @@ async def ingest_trace(
                 }
                 span_rows.append(span_row)
 
-            clickhouse_client.insert("spans", span_rows)
+            span_columns = list(span_rows[0].keys())
+            clickhouse_client.insert(
+                "spans",
+                [list(row.values()) for row in span_rows],
+                column_names=span_columns,
+            )
 
         # Increment rate limit counter
         rate_limiter = await get_rate_limiter()
@@ -310,7 +316,8 @@ async def ingest_span(
             "source": "native",
         }
 
-        clickhouse_client.insert("spans", [span_row])
+        span_columns = list(span_row.keys())
+        clickhouse_client.insert("spans", [list(span_row.values())], column_names=span_columns)
 
         logger.debug(f"Span ingested: {span_id} (trace: {trace_id}) - User: {user['user_id']}")
 
@@ -444,7 +451,12 @@ async def ingest_batch(
 
         # Batch insert to ClickHouse
         if span_rows:
-            clickhouse_client.insert("spans", span_rows)
+            span_columns = list(span_rows[0].keys())
+            clickhouse_client.insert(
+                "spans",
+                [list(row.values()) for row in span_rows],
+                column_names=span_columns,
+            )
 
         # Increment rate limit counter
         rate_limiter = await get_rate_limiter()
@@ -556,11 +568,21 @@ async def ingest_otlp_traces(
 
         # Insert traces
         if trace_rows:
-            clickhouse_client.insert("traces", trace_rows)
+            trace_columns = list(trace_rows[0].keys())
+            clickhouse_client.insert(
+                "traces",
+                [list(row.values()) for row in trace_rows],
+                column_names=trace_columns,
+            )
 
         # Insert spans
         if span_rows:
-            clickhouse_client.insert("spans", span_rows)
+            span_columns = list(span_rows[0].keys())
+            clickhouse_client.insert(
+                "spans",
+                [list(row.values()) for row in span_rows],
+                column_names=span_columns,
+            )
 
         # Increment rate limit (count each trace as 1 against the limit)
         traces_count = len(trace_rows) or 1
