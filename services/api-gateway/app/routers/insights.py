@@ -152,7 +152,7 @@ async def get_insights_summary(
             SELECT
                 model,
                 vendor,
-                SUM(call_count) AS call_count,
+                SUM(call_count) AS total_calls,
                 SUM(total_tokens) AS total_tokens,
                 SUM(prompt_tokens) AS prompt_tokens,
                 SUM(completion_tokens) AS completion_tokens,
@@ -163,7 +163,7 @@ async def get_insights_summary(
             WHERE project_id = %(project_id)s
               AND date >= %(since_date)s
             GROUP BY model, vendor
-            HAVING call_count > 0
+            HAVING total_calls > 0
             ORDER BY total_cost_usd DESC
             """,
             parameters={
