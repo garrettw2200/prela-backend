@@ -569,20 +569,28 @@ async def ingest_otlp_traces(
         # Insert traces
         if trace_rows:
             trace_columns = list(trace_rows[0].keys())
-            clickhouse_client.insert(
+            trace_data = [list(row.values()) for row in trace_rows]
+            logger.info(f"OTLP trace columns: {trace_columns}")
+            logger.info(f"OTLP trace data types: {[(type(v).__name__, v) for v in trace_data[0]]}")
+            result = clickhouse_client.insert(
                 "traces",
-                [list(row.values()) for row in trace_rows],
+                trace_data,
                 column_names=trace_columns,
             )
+            logger.info(f"OTLP trace insert result: {result}")
 
         # Insert spans
         if span_rows:
             span_columns = list(span_rows[0].keys())
-            clickhouse_client.insert(
+            span_data = [list(row.values()) for row in span_rows]
+            logger.info(f"OTLP span columns: {span_columns}")
+            logger.info(f"OTLP span data types: {[(type(v).__name__, v) for v in span_data[0]]}")
+            result = clickhouse_client.insert(
                 "spans",
-                [list(row.values()) for row in span_rows],
+                span_data,
                 column_names=span_columns,
             )
+            logger.info(f"OTLP span insert result: {result}")
 
         # Increment rate limit (count each trace as 1 against the limit)
         traces_count = len(trace_rows) or 1
@@ -620,5 +628,6 @@ async def ingest_otlp_traces(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
     except Exception as e:
-        logger.error(f"Failed to ingest OTLP traces: {e}")
+        import traceback
+        logger.error(f"Failed to ingest OTLP traces: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to ingest OTLP traces")
