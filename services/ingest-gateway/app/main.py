@@ -577,7 +577,7 @@ async def ingest_otlp_traces(
                 trace_data,
                 column_names=trace_columns,
             )
-            logger.info(f"OTLP trace insert result: {result}")
+            logger.info(f"OTLP trace insert result: written_rows={result.written_rows}, summary={result.summary}")
 
         # Insert spans
         if span_rows:
@@ -590,7 +590,7 @@ async def ingest_otlp_traces(
                 span_data,
                 column_names=span_columns,
             )
-            logger.info(f"OTLP span insert result: {result}")
+            logger.info(f"OTLP span insert result: written_rows={result.written_rows}, summary={result.summary}")
 
         # Increment rate limit (count each trace as 1 against the limit)
         traces_count = len(trace_rows) or 1
