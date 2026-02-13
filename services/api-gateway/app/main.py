@@ -1,12 +1,13 @@
 """API Gateway main application."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import api_keys, billing, cost_optimization, drift, errors, health, multi_agent, n8n, projects, replay, traces
+from .routers import api_keys, billing, cost_optimization, data_sources, drift, errors, health, multi_agent, n8n, projects, replay, traces
 from .websocket import websocket_endpoint
 from shared import settings
 
@@ -19,7 +20,19 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     logger.info(f"Starting API Gateway ({settings.environment})")
 
+    # Start background data source sync loop
+    from .services.data_source_sync import background_sync_loop
+
+    sync_task = asyncio.create_task(background_sync_loop())
+
     yield
+
+    # Cancel background task on shutdown
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        pass
 
     logger.info("Shutting down API Gateway")
 
@@ -52,6 +65,7 @@ app.include_router(replay.router, prefix="/api/v1/replay", tags=["replay"])
 app.include_router(errors.router, prefix="/api/v1", tags=["errors"])
 app.include_router(drift.router, prefix="/api/v1/drift", tags=["drift"])
 app.include_router(cost_optimization.router, prefix="/api/v1/cost-optimization", tags=["cost-optimization"])
+app.include_router(data_sources.router, tags=["data-sources"])
 
 
 @app.websocket("/ws/{project_id}")

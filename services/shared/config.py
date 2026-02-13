@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     stripe_pro_ai_nlp_price_id: str = ""  # $3 per 1k searches
     stripe_pro_retention_price_id: str = ""  # $10 per 30 days
 
+    # Data Source Integration
+    data_source_encryption_key: str = ""  # Fernet key for encrypting API secrets
+    data_source_sync_interval_minutes: int = 15
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

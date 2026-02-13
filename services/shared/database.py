@@ -465,3 +465,154 @@ async def delete_api_key(api_key_id: str, user_id: str) -> None:
         api_key_id,
         user_id,
     )
+
+
+# Data source helper functions
+
+
+async def create_data_source(
+    user_id: str,
+    project_id: str,
+    source_type: str,
+    name: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Create a new data source connection.
+
+    Args:
+        user_id: User UUID.
+        project_id: Prela project ID.
+        source_type: Source type (e.g. 'langfuse').
+        name: Display name for the connection.
+        config: Connection config (host, public_key, encrypted_secret_key).
+
+    Returns:
+        Created data source record.
+    """
+    import json
+
+    return await insert_returning(
+        """
+        INSERT INTO data_sources (user_id, project_id, type, name, config)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+        """,
+        user_id,
+        project_id,
+        source_type,
+        name,
+        json.dumps(config),
+    )
+
+
+async def get_data_sources_by_user_id(user_id: str) -> list[dict[str, Any]]:
+    """Get all data sources for a user.
+
+    Args:
+        user_id: User UUID.
+
+    Returns:
+        List of data source records.
+    """
+    return await fetch_all(
+        """
+        SELECT * FROM data_sources
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        """,
+        user_id,
+    )
+
+
+async def get_data_source_by_id(
+    source_id: str, user_id: str
+) -> dict[str, Any] | None:
+    """Get a specific data source with ownership check.
+
+    Args:
+        source_id: Data source UUID.
+        user_id: User UUID (for authorization).
+
+    Returns:
+        Data source record, or None if not found / not owned.
+    """
+    return await fetch_one(
+        "SELECT * FROM data_sources WHERE id = $1 AND user_id = $2",
+        source_id,
+        user_id,
+    )
+
+
+async def get_active_data_sources() -> list[dict[str, Any]]:
+    """Get all active data sources for background sync.
+
+    Returns:
+        List of active data source records.
+    """
+    return await fetch_all(
+        "SELECT * FROM data_sources WHERE status = 'active' ORDER BY last_sync_at ASC NULLS FIRST"
+    )
+
+
+async def update_data_source_status(
+    source_id: str,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    """Update the status and error message of a data source.
+
+    Args:
+        source_id: Data source UUID.
+        status: New status ('active', 'error', 'paused').
+        error_message: Error description (cleared if None).
+    """
+    await execute(
+        """
+        UPDATE data_sources
+        SET status = $2, error_message = $3, updated_at = NOW()
+        WHERE id = $1
+        """,
+        source_id,
+        status,
+        error_message,
+    )
+
+
+async def update_data_source_last_sync(
+    source_id: str,
+    last_sync_at: Any,
+    config: dict[str, Any],
+) -> None:
+    """Update last_sync_at and config after a successful sync.
+
+    Args:
+        source_id: Data source UUID.
+        last_sync_at: Timestamp of sync completion.
+        config: Updated config (with new last_synced_timestamp).
+    """
+    import json
+
+    await execute(
+        """
+        UPDATE data_sources
+        SET last_sync_at = $2, config = $3, status = 'active', error_message = NULL, updated_at = NOW()
+        WHERE id = $1
+        """,
+        source_id,
+        last_sync_at,
+        json.dumps(config),
+    )
+
+
+async def delete_data_source(source_id: str, user_id: str) -> None:
+    """Delete a data source.
+
+    Args:
+        source_id: Data source UUID.
+        user_id: User UUID (for authorization check).
+    """
+    await execute(
+        "DELETE FROM data_sources WHERE id = $1 AND user_id = $2",
+        source_id,
+        user_id,
+    )
