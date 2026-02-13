@@ -11,6 +11,7 @@ from shared import settings
 from shared.clickhouse import get_clickhouse_client
 from shared.database import get_user_by_clerk_id, get_subscription_by_user_id, verify_api_key
 from shared.rate_limiter import get_rate_limiter, close_rate_limiter
+from shared.otlp_normalizer import normalize_otlp_traces
 import hashlib
 
 logging.basicConfig(level=settings.log_level)
@@ -194,6 +195,7 @@ async def ingest_trace(
             "root_span_id": trace_data.get("root_span_id", ""),
             "span_count": len(trace_data.get("spans", [])),
             "attributes": json.dumps(trace_data.get("attributes", {})),
+            "source": "native",
         }
 
         # Insert trace
@@ -219,6 +221,7 @@ async def ingest_trace(
                     "attributes": json.dumps(span.get("attributes", {})),
                     "events": json.dumps(span.get("events", [])),
                     "replay_snapshot": json.dumps(span.get("replay_snapshot", {})),
+                    "source": "native",
                 }
                 span_rows.append(span_row)
 
@@ -304,6 +307,7 @@ async def ingest_span(
             "attributes": json.dumps(span_data.get("attributes", {})),
             "events": json.dumps(span_data.get("events", [])),
             "replay_snapshot": json.dumps(span_data.get("replay_snapshot", {})),
+            "source": "native",
         }
 
         clickhouse_client.insert("spans", [span_row])
@@ -434,6 +438,7 @@ async def ingest_batch(
                 "attributes": json.dumps(span_data.get("attributes", {})),
                 "events": json.dumps(span_data.get("events", [])),
                 "replay_snapshot": json.dumps(span_data.get("replay_snapshot", {})),
+                "source": "native",
             }
             span_rows.append(span_row)
 
@@ -478,3 +483,120 @@ async def ingest_batch(
     except Exception as e:
         logger.error(f"Failed to ingest batch: {e}")
         raise HTTPException(status_code=500, detail="Failed to ingest batch")
+
+
+@app.post("/v1/otlp/v1/traces")
+async def ingest_otlp_traces(
+    request: Request,
+    user: dict = Depends(authenticate_and_check_rate_limit),
+):
+    """Ingest traces in OTLP JSON format.
+
+    Accepts traces from any OpenTelemetry-compatible exporter (LangChain,
+    CrewAI, OpenLIT, etc.) and normalizes them into Prela's internal format.
+
+    Expected format: OTLP JSON (https://opentelemetry.io/docs/specs/otlp/)
+    {
+        "resourceSpans": [{
+            "resource": {"attributes": [...]},
+            "scopeSpans": [{"spans": [...]}]
+        }]
+    }
+
+    Supports gzip compression via Content-Encoding: gzip header.
+    """
+    import json
+    import gzip
+    import zlib
+
+    try:
+        # Handle gzip decompression
+        content_encoding = request.headers.get("content-encoding", "").lower()
+        body = await request.body()
+
+        if len(body) > settings.max_compressed_payload_size:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Payload too large. Maximum: {settings.max_compressed_payload_size} bytes"
+            )
+
+        if content_encoding == "gzip":
+            try:
+                decompressed = gzip.decompress(body)
+
+                if len(decompressed) > settings.max_decompressed_payload_size:
+                    raise HTTPException(status_code=413, detail="Decompressed payload too large")
+
+                ratio = len(decompressed) / len(body) if len(body) > 0 else 0
+                if ratio > settings.max_decompression_ratio:
+                    raise HTTPException(status_code=413, detail="Suspicious compression ratio")
+
+                body = decompressed
+            except zlib.error as e:
+                raise HTTPException(status_code=400, detail=f"Invalid gzip data: {str(e)}")
+            except MemoryError:
+                raise HTTPException(status_code=413, detail="Payload too large to decompress")
+        else:
+            if len(body) > settings.max_decompressed_payload_size:
+                raise HTTPException(status_code=413, detail="Payload too large")
+
+        # Parse JSON
+        otlp_data = json.loads(body)
+
+        if "resourceSpans" not in otlp_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid OTLP format: missing 'resourceSpans' field"
+            )
+
+        project_id = user["user_id"]
+
+        # Normalize OTLP to Prela format
+        trace_rows, span_rows = normalize_otlp_traces(otlp_data, project_id)
+
+        # Insert traces
+        if trace_rows:
+            clickhouse_client.insert("traces", trace_rows)
+
+        # Insert spans
+        if span_rows:
+            clickhouse_client.insert("spans", span_rows)
+
+        # Increment rate limit (count each trace as 1 against the limit)
+        traces_count = len(trace_rows) or 1
+        rate_limiter = await get_rate_limiter()
+        await rate_limiter.increment(user["user_id"], traces_count=traces_count)
+
+        logger.info(
+            f"OTLP ingested: {len(trace_rows)} traces, {len(span_rows)} spans - "
+            f"User: {user['user_id']}"
+        )
+
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            content={
+                "status": "accepted",
+                "traces_ingested": len(trace_rows),
+                "spans_ingested": len(span_rows),
+                "usage": {
+                    "current": user["current_usage"] + traces_count,
+                    "limit": user["limit"],
+                }
+            },
+            headers={
+                "X-Prela-Tier": user["tier"],
+                "X-RateLimit-Limit": str(user["limit"]) if user["limit"] else "unlimited",
+                "X-RateLimit-Remaining": str(
+                    max(0, (user["limit"] or 0) - user["current_usage"] - traces_count)
+                ),
+            }
+        )
+
+    except HTTPException:
+        raise
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    except Exception as e:
+        logger.error(f"Failed to ingest OTLP traces: {e}")
+        raise HTTPException(status_code=500, detail="Failed to ingest OTLP traces")

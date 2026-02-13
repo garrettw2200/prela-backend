@@ -46,6 +46,7 @@ from .notifications import (
 from .task_clusterer import TaskClusterer, PromptCluster
 from .model_recommender import ModelRecommender, ModelRecommendation, ModelUsageStats
 from .cache_analyzer import CacheAnalyzer, CacheRecommendation
+from .otlp_normalizer import normalize_otlp_traces
 
 __all__ = [
     "settings",
@@ -88,4 +89,5 @@ __all__ = [
     "ModelUsageStats",
     "CacheAnalyzer",
     "CacheRecommendation",
+    "normalize_otlp_traces",
 ]

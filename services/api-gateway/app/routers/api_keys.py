@@ -59,7 +59,7 @@ async def list_api_keys(
     - last_used_at: Timestamp of last use (null if never used)
     - created_at: Timestamp of creation
     """
-    user_id = user["id"]
+    user_id = user["user_id"]
     api_keys = await get_api_keys_by_user_id(user_id)
 
     logger.info(f"Listing {len(api_keys)} API keys for user {user_id}")
@@ -85,7 +85,7 @@ async def create_new_api_key(
         "created_at": "2026-02-01T12:00:00Z"
     }
     """
-    user_id = user["id"]
+    user_id = user["user_id"]
 
     # Generate random API key
     api_key = f"prela_sk_{secrets.token_urlsafe(32)}"
@@ -138,7 +138,7 @@ async def revoke_api_key(
     Raises:
         404 if the API key doesn't exist or doesn't belong to the user.
     """
-    user_id = user["id"]
+    user_id = user["user_id"]
 
     try:
         await delete_api_key(api_key_id, user_id)

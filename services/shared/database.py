@@ -214,7 +214,7 @@ async def create_free_subscription(user_id: str) -> dict[str, Any]:
         user_id,
         "free",
         "active",
-        100000,  # 100k traces/month for free tier
+        50000,  # 50k traces/month for free tier
         period_start,
         period_end,
     )
@@ -343,12 +343,12 @@ async def update_subscription_tier(
 
     # Calculate trace limit based on tier
     tier_limits = {
-        "free": 100_000,
+        "free": 50_000,
         "lunch-money": 100_000,
         "pro": 1_000_000,
         "enterprise": None,  # Unlimited
     }
-    trace_limit = tier_limits.get(tier, 100_000)
+    trace_limit = tier_limits.get(tier, 50_000)
 
     period_start = datetime.utcnow()
     period_end = period_start + timedelta(days=30)

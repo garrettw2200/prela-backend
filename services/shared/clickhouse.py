@@ -73,6 +73,7 @@ async def init_clickhouse_schema(client: Client) -> None:
             root_span_id String,
             span_count UInt32,
             attributes String,
+            source String DEFAULT 'native',
             created_at DateTime64(6) DEFAULT now64(6)
         )
         ENGINE = MergeTree()
@@ -100,6 +101,7 @@ async def init_clickhouse_schema(client: Client) -> None:
             attributes String,
             events String,
             replay_snapshot String,
+            source String DEFAULT 'native',
             created_at DateTime64(6) DEFAULT now64(6)
         )
         ENGINE = MergeTree()
@@ -341,6 +343,18 @@ async def init_clickhouse_schema(client: Client) -> None:
         PARTITION BY project_id
         """
     )
+
+    # Migration: Add source column to existing tables
+    try:
+        client.command(
+            "ALTER TABLE traces ADD COLUMN IF NOT EXISTS source String DEFAULT 'native'"
+        )
+        client.command(
+            "ALTER TABLE spans ADD COLUMN IF NOT EXISTS source String DEFAULT 'native'"
+        )
+        logger.info("Source column migration applied (or already present)")
+    except Exception as e:
+        logger.warning(f"Source column migration skipped: {e}")
 
     logger.info("ClickHouse schema initialized successfully")
 
