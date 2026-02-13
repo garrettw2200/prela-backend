@@ -48,6 +48,7 @@ from .model_recommender import ModelRecommender, ModelRecommendation, ModelUsage
 from .cache_analyzer import CacheAnalyzer, CacheRecommendation
 from .otlp_normalizer import normalize_otlp_traces
 from .security_scanner import SecurityScanner, SecurityAnalysis, SecurityFinding
+from .eval_generator import EvalGenerator, EvalGenerationConfig, EvalGenerationResult
 
 __all__ = [
     "settings",
@@ -94,4 +95,7 @@ __all__ = [
     "SecurityScanner",
     "SecurityAnalysis",
     "SecurityFinding",
+    "EvalGenerator",
+    "EvalGenerationConfig",
+    "EvalGenerationResult",
 ]

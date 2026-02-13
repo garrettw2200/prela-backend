@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     debug_agent_model: str = "gpt-4o-mini"
     debug_agent_max_tokens: int = 2000
 
+    # Eval Generation (auto-generate eval suites from traces)
+    eval_generation_model: str = "gpt-4o-mini"
+    eval_generation_max_tokens: int = 4000
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
