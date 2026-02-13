@@ -145,7 +145,7 @@ async def authenticate_and_check_rate_limit(
         )
 
     return {
-        "user_id": result["user_id"],
+        "user_id": str(result["user_id"]),
         "tier": result["tier"],
         "current_usage": current_usage,
         "limit": limit,
