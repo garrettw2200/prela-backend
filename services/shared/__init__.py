@@ -47,6 +47,7 @@ from .task_clusterer import TaskClusterer, PromptCluster
 from .model_recommender import ModelRecommender, ModelRecommendation, ModelUsageStats
 from .cache_analyzer import CacheAnalyzer, CacheRecommendation
 from .otlp_normalizer import normalize_otlp_traces
+from .security_scanner import SecurityScanner, SecurityAnalysis, SecurityFinding
 
 __all__ = [
     "settings",
@@ -90,4 +91,7 @@ __all__ = [
     "CacheAnalyzer",
     "CacheRecommendation",
     "normalize_otlp_traces",
+    "SecurityScanner",
+    "SecurityAnalysis",
+    "SecurityFinding",
 ]

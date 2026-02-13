@@ -344,6 +344,24 @@ async def init_clickhouse_schema(client: Client) -> None:
         """
     )
 
+    # Analysis results table (security scanning, hallucination, drift)
+    client.command(
+        """
+        CREATE TABLE IF NOT EXISTS analysis_results (
+            result_id String,
+            trace_id String,
+            project_id String,
+            analysis_type String,
+            result String,
+            score Float64,
+            created_at DateTime64(6) DEFAULT now64(6)
+        )
+        ENGINE = ReplacingMergeTree(created_at)
+        ORDER BY (project_id, analysis_type, trace_id)
+        TTL created_at + INTERVAL 90 DAY
+        """
+    )
+
     # Migration: Add source column to existing tables
     try:
         client.command(

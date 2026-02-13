@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import api_keys, billing, cost_optimization, data_sources, drift, errors, health, multi_agent, n8n, projects, replay, traces
+from .routers import api_keys, billing, cost_optimization, data_sources, drift, errors, health, insights, multi_agent, n8n, projects, replay, security, traces
 from .websocket import websocket_endpoint
 from shared import settings
 
@@ -25,12 +25,22 @@ async def lifespan(app: FastAPI):
 
     sync_task = asyncio.create_task(background_sync_loop())
 
+    # Start background security scanning loop
+    from .services.security_scan import background_security_scan_loop
+
+    security_scan_task = asyncio.create_task(background_security_scan_loop())
+
     yield
 
-    # Cancel background task on shutdown
+    # Cancel background tasks on shutdown
     sync_task.cancel()
+    security_scan_task.cancel()
     try:
         await sync_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await security_scan_task
     except asyncio.CancelledError:
         pass
 
@@ -65,6 +75,8 @@ app.include_router(replay.router, prefix="/api/v1/replay", tags=["replay"])
 app.include_router(errors.router, prefix="/api/v1", tags=["errors"])
 app.include_router(drift.router, prefix="/api/v1/drift", tags=["drift"])
 app.include_router(cost_optimization.router, prefix="/api/v1/cost-optimization", tags=["cost-optimization"])
+app.include_router(insights.router, prefix="/api/v1/insights", tags=["insights"])
+app.include_router(security.router, prefix="/api/v1/security", tags=["security"])
 app.include_router(data_sources.router, tags=["data-sources"])
 
 
