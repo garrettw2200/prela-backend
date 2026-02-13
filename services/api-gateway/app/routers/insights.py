@@ -54,12 +54,19 @@ class SecuritySummaryData(BaseModel):
     by_type: dict[str, int]
 
 
+class DriftSummaryData(BaseModel):
+    active_alerts: int
+    by_severity: dict[str, int]
+    agents_affected: int
+
+
 class InsightsSummaryResponse(BaseModel):
     health_score: float = Field(ge=0, le=100)
     health_trend: list[HealthTrendPoint]
     top_issues: list[TopIssue]
     cost_insights: CostInsights
     security_summary: SecuritySummaryData
+    drift_summary: DriftSummaryData
     trace_count: int
     error_rate: float
     time_window: str
@@ -72,14 +79,14 @@ def _compute_health_score(
     error_rate: float,
     cost_waste_pct: float,
     security_incident_rate: float = 0.0,
+    drift_rate: float = 0.0,
 ) -> float:
     """Compute health score from available metrics.
 
     Formula: 100 - (error_rate * 30) - (hallucination_rate * 25)
-             - (cost_waste_pct * 15) - (latency_drift_pct * 15)
+             - (cost_waste_pct * 15) - (drift_rate * 15)
              - (security_incident_rate * 15)
 
-    Sprint 5 (drift) term defaults to 0.
     Hallucination rate defaults to 0 (too expensive to compute on every request).
     """
     score = (
@@ -87,6 +94,7 @@ def _compute_health_score(
         - (error_rate * 30)
         - (cost_waste_pct * 15)
         - (security_incident_rate * 15)
+        - (drift_rate * 15)
     )
     return max(0.0, min(100.0, round(score, 1)))
 
@@ -309,6 +317,33 @@ async def get_insights_summary(
 
         security_total = sum(security_by_severity.values())
 
+        # --- Query 7: Active drift alerts ---
+        drift_alert_count = 0
+        drift_by_severity: Counter[str] = Counter()
+        drift_agents_affected = 0
+
+        try:
+            drift_results = client.query(
+                """
+                SELECT severity, count() AS cnt, uniq(agent_name) AS agents
+                FROM drift_alerts
+                WHERE project_id = %(project_id)s
+                  AND status = 'active'
+                  AND detected_at >= %(since)s
+                GROUP BY severity
+                """,
+                parameters={"project_id": project_id, "since": since_str},
+            )
+
+            for r in drift_results.result_rows:
+                sev = str(r[0])
+                cnt = int(r[1])
+                drift_by_severity[sev] += cnt
+                drift_alert_count += cnt
+                drift_agents_affected += int(r[2])
+        except Exception as drift_err:
+            logger.warning(f"Drift query failed (table may not exist yet): {drift_err}")
+
         # --- Compute health trend ---
         cost_waste_pct = (
             (potential_monthly_savings / (total_cost * 30 / days)) * 100
@@ -319,16 +354,19 @@ async def get_insights_summary(
         # Security incident rate: findings / total LLM spans (capped at 1.0)
         security_incident_rate = min(security_total / trace_count, 1.0) if trace_count > 0 else 0.0
 
+        # Drift rate: active alerts / total traces (capped at 1.0)
+        drift_rate = min(drift_alert_count / trace_count, 1.0) if trace_count > 0 else 0.0
+
         health_trend: list[HealthTrendPoint] = []
         for r in daily_stats.result_rows:
             day_date = str(r[0])
             day_total = int(r[1])
             day_errors = int(r[2])
             day_error_rate = day_errors / day_total if day_total > 0 else 0.0
-            day_score = _compute_health_score(day_error_rate, cost_waste_pct, security_incident_rate)
+            day_score = _compute_health_score(day_error_rate, cost_waste_pct, security_incident_rate, drift_rate)
             health_trend.append(HealthTrendPoint(date=day_date, score=day_score))
 
-        health_score = _compute_health_score(error_rate, cost_waste_pct, security_incident_rate)
+        health_score = _compute_health_score(error_rate, cost_waste_pct, security_incident_rate, drift_rate)
 
         return InsightsSummaryResponse(
             health_score=health_score,
@@ -345,6 +383,11 @@ async def get_insights_summary(
                 total_findings=security_total,
                 by_severity=dict(security_by_severity),
                 by_type=dict(security_by_type),
+            ),
+            drift_summary=DriftSummaryData(
+                active_alerts=drift_alert_count,
+                by_severity=dict(drift_by_severity),
+                agents_affected=drift_agents_affected,
             ),
             trace_count=trace_count,
             error_rate=round(error_rate, 4),

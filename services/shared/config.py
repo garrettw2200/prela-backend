@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     data_source_encryption_key: str = ""  # Fernet key for encrypting API secrets
     data_source_sync_interval_minutes: int = 15
 
+    # Drift Detection
+    drift_check_interval_minutes: int = 15  # How often to check for anomalies
+    drift_baseline_refresh_hours: int = 1  # How often to recalculate baselines
+
+    # Debug Agent (LLM-powered trace analysis)
+    debug_agent_model: str = "gpt-4o-mini"
+    debug_agent_max_tokens: int = 2000
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
