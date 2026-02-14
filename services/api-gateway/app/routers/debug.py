@@ -14,10 +14,11 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from shared import get_clickhouse_client, query_spans, settings
+from ..auth import require_tier
 from shared.debug_agent import DebugAgent, TRACE_COLUMNS
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ async def debug_trace(
     trace_id: str,
     project_id: str = Query(..., description="Project ID"),
     force: bool = Query(False, description="Force re-analysis (skip cache)"),
+    user: dict = Depends(require_tier("pro")),
 ) -> DebugAnalysisResponse:
     """Debug a trace — returns root cause analysis and fix suggestions.
 

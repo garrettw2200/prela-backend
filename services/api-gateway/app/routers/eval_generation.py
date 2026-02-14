@@ -15,10 +15,11 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from shared import get_clickhouse_client, settings
+from ..auth import require_tier
 from shared.eval_generator import EvalGenerator, EvalGenerationConfig
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,7 @@ async def trigger_eval_generation(
     request: EvalGenerationRequest,
     background_tasks: BackgroundTasks,
     project_id: str = Query(..., description="Project ID"),
+    user: dict = Depends(require_tier("pro")),
 ) -> EvalGenerationResponse:
     """Trigger eval suite generation from production traces.
 
@@ -248,6 +250,7 @@ async def trigger_eval_generation(
 async def get_generation_status(
     generation_id: str,
     project_id: str = Query(..., description="Project ID"),
+    user: dict = Depends(require_tier("pro")),
 ) -> EvalGenerationStatus:
     """Get the status of an eval generation run."""
     try:
@@ -297,6 +300,7 @@ async def get_generation_status(
 async def download_eval_suite(
     generation_id: str,
     project_id: str = Query(..., description="Project ID"),
+    user: dict = Depends(require_tier("pro")),
 ) -> Response:
     """Download a completed eval suite as a YAML file."""
     try:
@@ -350,6 +354,7 @@ async def list_eval_generations(
     project_id: str = Query(..., description="Project ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
+    user: dict = Depends(require_tier("pro")),
 ) -> EvalGenerationHistoryResponse:
     """List past eval generation runs for a project."""
     try:

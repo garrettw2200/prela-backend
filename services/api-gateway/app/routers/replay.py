@@ -14,9 +14,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from ..auth import require_tier
 from shared import get_clickhouse_client
 from shared.validation import InputValidator
 from shared.utils import safe_json_parse
@@ -349,6 +350,7 @@ async def list_replay_traces(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     since: str | None = Query(None, description="ISO 8601 timestamp to filter traces"),
+    user: dict = Depends(require_tier("lunch-money")),
 ) -> ReplayTracesResponse:
     """
     List traces with replay capability.
@@ -434,7 +436,7 @@ async def list_replay_traces(
 
 
 @router.get("/traces/{trace_id}", response_model=ReplayTraceDetail)
-async def get_replay_trace_detail(trace_id: str) -> ReplayTraceDetail:
+async def get_replay_trace_detail(trace_id: str, user: dict = Depends(require_tier("lunch-money"))) -> ReplayTraceDetail:
     """
     Get detailed trace information with replay snapshot data.
     """
@@ -512,7 +514,7 @@ async def get_replay_trace_detail(trace_id: str) -> ReplayTraceDetail:
 
 @router.post("/execute", response_model=ReplayExecutionResponse)
 async def execute_replay(
-    request: ReplayExecutionRequest, background_tasks: BackgroundTasks
+    request: ReplayExecutionRequest, background_tasks: BackgroundTasks, user: dict = Depends(require_tier("lunch-money"))
 ) -> ReplayExecutionResponse:
     """
     Trigger a replay execution.
@@ -563,7 +565,7 @@ async def execute_replay(
 
 
 @router.get("/executions/{execution_id}", response_model=ReplayExecutionStatus)
-async def get_replay_execution_status(execution_id: str) -> ReplayExecutionStatus:
+async def get_replay_execution_status(execution_id: str, user: dict = Depends(require_tier("lunch-money"))) -> ReplayExecutionStatus:
     """
     Get the status of a replay execution.
 
@@ -605,7 +607,7 @@ async def get_replay_execution_status(execution_id: str) -> ReplayExecutionStatu
 
 
 @router.get("/executions/{execution_id}/comparison", response_model=ReplayComparisonResponse)
-async def get_replay_comparison(execution_id: str) -> ReplayComparisonResponse:
+async def get_replay_comparison(execution_id: str, user: dict = Depends(require_tier("lunch-money"))) -> ReplayComparisonResponse:
     """
     Get comparison results between original and replayed execution.
 
@@ -677,6 +679,7 @@ async def list_replay_history(
     project_id: str = Query(..., description="Project ID to filter executions"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
+    user: dict = Depends(require_tier("lunch-money")),
 ) -> ReplayHistoryResponse:
     """
     List replay execution history.

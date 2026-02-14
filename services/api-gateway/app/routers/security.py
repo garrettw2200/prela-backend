@@ -14,10 +14,11 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from shared import get_clickhouse_client
+from ..auth import require_tier
 from shared.security_scanner import SecurityScanner
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ class SecuritySummaryResponse(BaseModel):
 async def scan_trace(
     trace_id: str,
     project_id: str = Query(..., description="Project ID"),
+    user: dict = Depends(require_tier("pro")),
 ) -> list[SecurityScanResponse]:
     """Scan a specific trace for security issues on-demand.
 
@@ -135,6 +137,7 @@ async def scan_trace(
 async def get_security_summary(
     project_id: str = Query(..., description="Project ID"),
     time_window: str = Query("7d", description="Time window (7d, 30d, 90d)"),
+    user: dict = Depends(require_tier("pro")),
 ) -> SecuritySummaryResponse:
     """Get aggregated security findings from pre-computed analysis results.
 

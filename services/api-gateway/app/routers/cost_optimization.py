@@ -12,8 +12,10 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from ..auth import require_tier
 
 from shared import (
     CacheAnalyzer,
@@ -81,6 +83,7 @@ async def get_model_recommendations(
     project_id: str = Query(..., description="Project ID"),
     time_window: str = Query("30d", description="Time window (7d, 30d, 90d)"),
     vendor: str = Query("all", description="Filter by vendor (openai, anthropic, all)"),
+    user: dict = Depends(require_tier("lunch-money")),
 ) -> dict[str, Any]:
     """
     Get model downgrade recommendations (P2.4.1).
@@ -190,6 +193,7 @@ async def get_cache_recommendations(
     project_id: str = Query(..., description="Project ID"),
     time_window: str = Query("30d", description="Time window (7d, 30d, 90d)"),
     min_cluster_size: int = Query(5, description="Minimum duplicate prompts"),
+    user: dict = Depends(require_tier("lunch-money")),
 ) -> dict[str, Any]:
     """
     Get caching recommendations (P2.4.3).
@@ -312,6 +316,7 @@ async def get_cache_recommendations(
 async def get_cost_analytics(
     project_id: str = Query(..., description="Project ID"),
     time_window: str = Query("30d", description="Time window (7d, 30d, 90d)"),
+    user: dict = Depends(require_tier("lunch-money")),
 ) -> dict[str, Any]:
     """
     Get cost analytics overview.

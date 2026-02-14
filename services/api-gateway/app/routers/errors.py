@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from ..auth import require_tier
 
 from shared import get_clickhouse_client
 from shared.error_analyzer import ErrorAnalysis, ErrorAnalyzer, ErrorCategory, ErrorSeverity
@@ -507,6 +509,7 @@ async def analyze_hallucinations(
         le=1.0,
         description="Minimum similarity score to consider a claim grounded (0.0-1.0)",
     ),
+    user: dict = Depends(require_tier("pro")),
 ) -> list[HallucinationAnalysisResponse]:
     """
     Analyze LLM spans in a trace for hallucinations.
