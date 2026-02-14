@@ -3,8 +3,10 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ..auth import require_tier
+from ..middleware.ai_feature_limiter import check_ai_feature_limit
 from shared import get_clickhouse_client, query_spans, query_traces
 
 router = APIRouter()
@@ -117,6 +119,7 @@ async def search_traces(
     project_id: str = Query(..., description="Project ID"),
     query: str = Query(..., description="Search query"),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of results"),
+    user: dict = Depends(require_tier("pro")),
 ) -> dict[str, Any]:
     """Search traces by content.
 
@@ -128,6 +131,9 @@ async def search_traces(
     Returns:
         Dictionary with matching traces.
     """
+    # Check and increment NLP search usage limit
+    await check_ai_feature_limit(user["user_id"], user["tier"], "nlp")
+
     try:
         client = get_clickhouse_client()
 

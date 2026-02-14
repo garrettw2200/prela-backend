@@ -21,6 +21,7 @@ from shared.database import (
     delete_api_key,
 )
 from app.auth import get_current_user
+from app.middleware.ai_feature_limiter import get_ai_feature_limiter
 from app.services.overage_tracker import OverageTracker, get_usage_for_period
 
 logger = logging.getLogger(__name__)
@@ -512,4 +513,29 @@ async def get_subscription(user: dict = Depends(get_current_user)):
         "current_period_start": subscription.get("current_period_start"),
         "current_period_end": subscription.get("current_period_end"),
         "cancel_at_period_end": subscription.get("cancel_at_period_end", False),
+    }
+
+
+@router.get("/ai-usage")
+async def get_ai_usage(user: dict = Depends(get_current_user)):
+    """Get current user's AI feature usage for the current billing period.
+
+    Returns usage and limits for all AI features (Pro tier only).
+    Free/Lunch Money tiers return zeroes since AI features are not available.
+    """
+    tier = user.get("tier", "free")
+
+    if tier not in ("pro", "enterprise"):
+        return {
+            "tier": tier,
+            "usage": {},
+            "message": "AI features require Pro or Enterprise tier",
+        }
+
+    limiter = await get_ai_feature_limiter()
+    usage = await limiter.get_all_usage(user["user_id"])
+
+    return {
+        "tier": tier,
+        "usage": usage,
     }

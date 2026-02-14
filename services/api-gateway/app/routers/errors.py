@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..auth import require_tier
+from ..middleware.ai_feature_limiter import check_ai_feature_limit
 
 from shared import get_clickhouse_client
 from shared.error_analyzer import ErrorAnalysis, ErrorAnalyzer, ErrorCategory, ErrorSeverity
@@ -528,6 +529,9 @@ async def analyze_hallucinations(
     Raises:
         HTTPException: 404 if trace not found, 500 on processing errors
     """
+    # Check and increment AI usage limit
+    await check_ai_feature_limit(user["user_id"], user["tier"], "hallucination")
+
     client = get_clickhouse_client()
 
     try:

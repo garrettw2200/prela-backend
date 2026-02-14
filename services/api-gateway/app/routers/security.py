@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from shared import get_clickhouse_client
 from ..auth import require_tier
+from ..middleware.ai_feature_limiter import check_ai_feature_limit
 from shared.security_scanner import SecurityScanner
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,9 @@ async def scan_trace(
     Runs the security scanner against all LLM spans in the trace.
     Does NOT persist results — use for real-time, interactive analysis.
     """
+    # Check and increment security scan usage limit
+    await check_ai_feature_limit(user["user_id"], user["tier"], "security")
+
     try:
         client = get_clickhouse_client()
 

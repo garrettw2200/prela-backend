@@ -9,9 +9,12 @@ logger = logging.getLogger(__name__)
 
 # Pro tier AI limits (from PRICING_STRATEGY_V2.md)
 AI_LIMITS = {
-    "hallucination_checks": 10_000,  # per month
-    "drift_baselines": 50,
-    "nlp_searches": 1_000,  # per month
+    "hallucination": 10_000,  # per month
+    "drift": 50,  # baselines per month
+    "nlp": 1_000,  # searches per month
+    "security": 10_000,  # scans per month
+    "debug": 500,  # sessions per month
+    "eval_generation": 100,  # generations per month
 }
 
 
@@ -101,8 +104,7 @@ class AIFeatureLimiter:
             return True, 0, None
 
         # Get limit for this feature
-        limit_key = f"{feature}_checks" if feature == "hallucination" else f"{feature}_baselines" if feature == "drift" else f"{feature}_searches"
-        limit = AI_LIMITS.get(limit_key, 0)
+        limit = AI_LIMITS.get(feature, 0)
 
         # Get Redis client
         r = await self.get_redis()
@@ -209,20 +211,20 @@ class AIFeatureLimiter:
             logger.error(f"Error getting AI feature usage: {e}")
             return 0
 
-    async def get_all_usage(self, user_id: str) -> dict[str, int]:
+    async def get_all_usage(self, user_id: str) -> dict[str, dict]:
         """Get all AI feature usage for user in current period.
 
         Args:
             user_id: User UUID
 
         Returns:
-            Dictionary with usage counts for all features
+            Dictionary with usage and limit for all features
         """
-        return {
-            "hallucination_checks": await self.get_usage(user_id, "hallucination"),
-            "drift_baselines": await self.get_usage(user_id, "drift"),
-            "nlp_searches": await self.get_usage(user_id, "nlp"),
-        }
+        result = {}
+        for feature, limit in AI_LIMITS.items():
+            usage = await self.get_usage(user_id, feature)
+            result[feature] = {"used": usage, "limit": limit}
+        return result
 
 
 # Global instance

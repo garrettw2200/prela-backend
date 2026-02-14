@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from shared import get_clickhouse_client, query_spans, settings
 from ..auth import require_tier
+from ..middleware.ai_feature_limiter import check_ai_feature_limit
 from shared.debug_agent import DebugAgent, TRACE_COLUMNS
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,9 @@ async def debug_trace(
             cached = _get_cached_result(client, trace_id, project_id)
             if cached:
                 return cached
+
+        # Check and increment debug session usage (only for non-cached analysis)
+        await check_ai_feature_limit(user["user_id"], user["tier"], "debug")
 
         # Fetch trace
         trace_result = client.query(

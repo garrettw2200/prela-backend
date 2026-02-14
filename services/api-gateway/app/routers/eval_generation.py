@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from shared import get_clickhouse_client, settings
 from ..auth import require_tier
+from ..middleware.ai_feature_limiter import check_ai_feature_limit
 from shared.eval_generator import EvalGenerator, EvalGenerationConfig
 
 logger = logging.getLogger(__name__)
@@ -209,6 +210,9 @@ async def trigger_eval_generation(
     Starts generation in the background and returns immediately with a
     generation_id that can be used to poll status and download results.
     """
+    # Check and increment eval generation usage limit
+    await check_ai_feature_limit(user["user_id"], user["tier"], "eval_generation")
+
     generation_id = str(uuid.uuid4())
     suite_name = request.suite_name or f"Generated Suite - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
 

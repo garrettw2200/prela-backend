@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..auth import require_tier
+from ..middleware.ai_feature_limiter import check_ai_feature_limit
 
 from shared import (
     get_clickhouse_client,
@@ -392,6 +393,9 @@ async def calculate_baselines(
     Returns:
         Number of baselines calculated.
     """
+    # Check AI usage limit (1 baseline per agent)
+    await check_ai_feature_limit(user["user_id"], user["tier"], "drift")
+
     try:
         client = get_clickhouse_client()
         calculator = BaselineCalculator(client, window_days=window_days)
