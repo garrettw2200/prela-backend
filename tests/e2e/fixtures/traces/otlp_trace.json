@@ -1,0 +1,34 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "e2e-otlp-test"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "opentelemetry.instrumentation.openai"},
+          "spans": [
+            {
+              "traceId": "e2e0000000000000otlptrace001",
+              "spanId": "otlpspan001",
+              "parentSpanId": "",
+              "name": "openai.chat.completions",
+              "kind": 3,
+              "startTimeUnixNano": "1707904800000000000",
+              "endTimeUnixNano": "1707904801000000000",
+              "attributes": [
+                {"key": "llm.model", "value": {"stringValue": "gpt-4o-mini"}},
+                {"key": "llm.vendor", "value": {"stringValue": "openai"}},
+                {"key": "llm.prompt_tokens", "value": {"intValue": "100"}},
+                {"key": "llm.completion_tokens", "value": {"intValue": "50"}}
+              ],
+              "status": {"code": 1}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "trace_id": "e2e_test_trace_error_001",
+  "service_name": "e2e-test-agent",
+  "started_at": "2026-02-14T11:00:00.000000Z",
+  "completed_at": "2026-02-14T11:00:00.500000Z",
+  "duration_ms": 500.0,
+  "status": "error",
+  "root_span_id": "span_err_root_001",
+  "span_count": 2,
+  "attributes": {"error": "LLM timeout"},
+  "spans": [
+    {
+      "span_id": "span_err_root_001",
+      "trace_id": "e2e_test_trace_error_001",
+      "parent_span_id": "",
+      "name": "agent-execution",
+      "span_type": "agent",
+      "service_name": "e2e-test-agent",
+      "started_at": "2026-02-14T11:00:00.000000Z",
+      "ended_at": "2026-02-14T11:00:00.500000Z",
+      "duration_ms": 500.0,
+      "status": "error",
+      "attributes": {"error.message": "Child span failed: LLM timeout"},
+      "events": [
+        {"name": "exception", "timestamp": "2026-02-14T11:00:00.500000Z", "attributes": {"exception.type": "TimeoutError", "exception.message": "LLM call timed out after 30s"}}
+      ],
+      "replay_snapshot": {}
+    },
+    {
+      "span_id": "span_err_llm_001",
+      "trace_id": "e2e_test_trace_error_001",
+      "parent_span_id": "span_err_root_001",
+      "name": "llm-completion",
+      "span_type": "llm",
+      "service_name": "e2e-test-agent",
+      "started_at": "2026-02-14T11:00:00.100000Z",
+      "ended_at": "2026-02-14T11:00:00.500000Z",
+      "duration_ms": 400.0,
+      "status": "error",
+      "attributes": {
+        "llm.model": "gpt-4o",
+        "llm.vendor": "openai",
+        "error.message": "Timeout after 30s"
+      },
+      "events": [],
+      "replay_snapshot": {}
+    }
+  ]
+}

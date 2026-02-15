@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -189,7 +189,7 @@ def _cache_result(client: Any, analysis: Any, project_id: str) -> None:
     """Store debug analysis in analysis_results table."""
     try:
         result_id = str(uuid.uuid4())
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+        now = datetime.now(timezone.utc)
 
         data = [
             [

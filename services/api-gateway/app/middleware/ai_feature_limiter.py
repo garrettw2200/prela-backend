@@ -13,7 +13,7 @@ AI_LIMITS = {
     "drift": 50,  # baselines per month
     "nlp": 1_000,  # searches per month
     "security": 10_000,  # scans per month
-    "debug": 500,  # sessions per month
+    "debug": 50,  # sessions per month (Pro tier)
     "eval_generation": 100,  # generations per month
 }
 

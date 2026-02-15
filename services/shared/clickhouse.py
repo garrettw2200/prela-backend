@@ -362,6 +362,32 @@ async def init_clickhouse_schema(client: Client) -> None:
         """
     )
 
+    # Batch replay jobs table
+    client.command(
+        """
+        CREATE TABLE IF NOT EXISTS batch_replay_jobs (
+            batch_id String,
+            project_id String,
+            user_id String,
+            status Enum8('pending' = 1, 'running' = 2, 'completed' = 3, 'failed' = 4, 'partial' = 5),
+            trace_ids Array(String),
+            parameters String,
+            total_traces UInt32,
+            completed_traces UInt32 DEFAULT 0,
+            failed_traces UInt32 DEFAULT 0,
+            created_at DateTime64(6) DEFAULT now64(6),
+            started_at Nullable(DateTime64(6)),
+            completed_at Nullable(DateTime64(6)),
+            error Nullable(String),
+            summary String DEFAULT '{}'
+        )
+        ENGINE = MergeTree()
+        ORDER BY (project_id, created_at, batch_id)
+        PARTITION BY (project_id, toYYYYMM(created_at))
+        TTL created_at + INTERVAL 90 DAY
+        """
+    )
+
     # Migration: Add source column to existing tables
     try:
         client.command(
@@ -373,6 +399,15 @@ async def init_clickhouse_schema(client: Client) -> None:
         logger.info("Source column migration applied (or already present)")
     except Exception as e:
         logger.warning(f"Source column migration skipped: {e}")
+
+    # Migration: Add batch_id column to replay_executions for batch replay support
+    try:
+        client.command(
+            "ALTER TABLE replay_executions ADD COLUMN IF NOT EXISTS batch_id Nullable(String)"
+        )
+        logger.info("batch_id column migration applied (or already present)")
+    except Exception as e:
+        logger.warning(f"batch_id column migration skipped: {e}")
 
     logger.info("ClickHouse schema initialized successfully")
 

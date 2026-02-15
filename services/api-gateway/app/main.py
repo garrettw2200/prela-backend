@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import api_keys, billing, cost_optimization, data_sources, debug, drift, errors, eval_generation, health, insights, multi_agent, n8n, projects, replay, security, traces
+from .routers import api_keys, billing, comments, cost_optimization, data_sources, debug, drift, errors, eval_generation, health, insights, multi_agent, n8n, projects, replay, security, teams, traces
 from .websocket import websocket_endpoint
 from shared import settings
 
@@ -90,6 +90,8 @@ app.include_router(security.router, prefix="/api/v1/security", tags=["security"]
 app.include_router(debug.router, prefix="/api/v1/debug", tags=["debug"])
 app.include_router(eval_generation.router, prefix="/api/v1/eval-generation", tags=["eval-generation"])
 app.include_router(data_sources.router, tags=["data-sources"])
+app.include_router(teams.router, tags=["teams"])
+app.include_router(comments.router, tags=["comments"])
 
 
 @app.websocket("/ws/{project_id}")

@@ -118,7 +118,7 @@ def _run_generation(generation_id: str, project_id: str, config: EvalGenerationC
 
 def _store_result(client, generation_id: str, project_id: str, result) -> None:
     """Store generation result in analysis_results table."""
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+    now = datetime.now(timezone.utc)
     result_json = json.dumps({
         "suite_name": result.suite_name,
         "suite_yaml": result.suite_yaml,
@@ -149,7 +149,8 @@ def _store_result(client, generation_id: str, project_id: str, result) -> None:
 
 def _store_error(client, generation_id: str, project_id: str, error: str) -> None:
     """Store a failed generation result."""
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+    now = datetime.now(timezone.utc)
+    now_str = now.isoformat()
     result_json = json.dumps({
         "suite_name": "",
         "suite_yaml": None,
@@ -159,8 +160,8 @@ def _store_error(client, generation_id: str, project_id: str, error: str) -> Non
         "pattern_summary": [],
         "status": "failed",
         "error": error,
-        "started_at": now,
-        "completed_at": now,
+        "started_at": now_str,
+        "completed_at": now_str,
     })
 
     client.insert(
@@ -172,7 +173,8 @@ def _store_error(client, generation_id: str, project_id: str, error: str) -> Non
 
 def _store_initial(client, generation_id: str, project_id: str, suite_name: str) -> None:
     """Store initial 'running' record so status polling works immediately."""
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+    now = datetime.now(timezone.utc)
+    now_str = now.isoformat()
     result_json = json.dumps({
         "suite_name": suite_name,
         "suite_yaml": None,
@@ -182,7 +184,7 @@ def _store_initial(client, generation_id: str, project_id: str, suite_name: str)
         "pattern_summary": [],
         "status": "running",
         "error": None,
-        "started_at": now,
+        "started_at": now_str,
         "completed_at": None,
     })
 

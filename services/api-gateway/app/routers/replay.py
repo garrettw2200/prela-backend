@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ..auth import require_tier
+from ..auth import require_tier, check_project_access_or_403
 from shared import get_clickhouse_client
 from shared.validation import InputValidator
 from shared.utils import safe_json_parse
@@ -106,6 +106,7 @@ async def execute_replay_in_background(
     trace_id: str,
     project_id: str,
     parameters: dict[str, Any],
+    batch_id: str | None = None,
 ) -> None:
     """Execute replay in background and store results in ClickHouse."""
     client = get_clickhouse_client()
@@ -113,13 +114,13 @@ async def execute_replay_in_background(
     try:
         from prela.replay import ReplayEngine, compare_replays
 
-        # Update status to running
+        # Insert execution record with status running
         client.command(
             """
             INSERT INTO replay_executions (
-                execution_id, trace_id, project_id, triggered_at, status, parameters
+                execution_id, trace_id, project_id, triggered_at, status, parameters, batch_id
             ) VALUES (
-                %(execution_id)s, %(trace_id)s, %(project_id)s, now64(6), 'running', %(parameters)s
+                %(execution_id)s, %(trace_id)s, %(project_id)s, now64(6), 'running', %(parameters)s, %(batch_id)s
             )
             """,
             {
@@ -127,6 +128,7 @@ async def execute_replay_in_background(
                 "trace_id": trace_id,
                 "project_id": project_id,
                 "parameters": json.dumps(parameters),
+                "batch_id": batch_id,
             },
         )
 
@@ -215,6 +217,148 @@ async def execute_replay_in_background(
             """,
             {"execution_id": execution_id, "error": str(e)},
         )
+
+
+def _build_batch_summary(
+    comparisons: list[dict[str, Any]],
+    completed: int,
+    failed: int,
+    total: int,
+) -> dict[str, Any]:
+    """Build aggregated summary from individual replay comparisons."""
+    if not comparisons:
+        return {"completed": completed, "failed": failed, "total": total}
+
+    total_original_cost = sum(
+        c.get("original", {}).get("total_cost_usd", 0) for c in comparisons
+    )
+    total_modified_cost = sum(
+        c.get("modified", {}).get("total_cost_usd", 0) for c in comparisons
+    )
+    total_original_tokens = sum(
+        c.get("original", {}).get("total_tokens", 0) for c in comparisons
+    )
+    total_modified_tokens = sum(
+        c.get("modified", {}).get("total_tokens", 0) for c in comparisons
+    )
+    avg_original_duration = (
+        sum(c.get("original", {}).get("total_duration_ms", 0) for c in comparisons)
+        / len(comparisons)
+    )
+    avg_modified_duration = (
+        sum(c.get("modified", {}).get("total_duration_ms", 0) for c in comparisons)
+        / len(comparisons)
+    )
+
+    return {
+        "completed": completed,
+        "failed": failed,
+        "total": total,
+        "cost_delta_usd": total_modified_cost - total_original_cost,
+        "token_delta": total_modified_tokens - total_original_tokens,
+        "avg_duration_delta_ms": avg_modified_duration - avg_original_duration,
+        "total_original_cost_usd": total_original_cost,
+        "total_modified_cost_usd": total_modified_cost,
+    }
+
+
+async def execute_batch_replay_in_background(
+    batch_id: str,
+    trace_ids: list[str],
+    project_id: str,
+    parameters: dict[str, Any],
+) -> None:
+    """Execute batch replay with concurrency control."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    client = get_clickhouse_client()
+    semaphore = asyncio.Semaphore(3)  # Max 3 concurrent replays
+
+    # Update batch status to running
+    client.command(
+        """
+        ALTER TABLE batch_replay_jobs
+        UPDATE status = 'running', started_at = now64(6)
+        WHERE batch_id = %(batch_id)s
+        """,
+        {"batch_id": batch_id},
+    )
+
+    completed = 0
+    failed = 0
+    all_comparisons: list[dict[str, Any]] = []
+
+    async def run_single(trace_id: str) -> None:
+        nonlocal completed, failed
+        async with semaphore:
+            execution_id = str(uuid.uuid4())
+            try:
+                await execute_replay_in_background(
+                    execution_id=execution_id,
+                    trace_id=trace_id,
+                    project_id=project_id,
+                    parameters=parameters,
+                    batch_id=batch_id,
+                )
+                # Check if it succeeded by reading the record
+                # Small delay to allow ClickHouse mutation to process
+                await asyncio.sleep(1)
+                result = client.query(
+                    """
+                    SELECT status, comparison FROM replay_executions
+                    WHERE execution_id = %(eid)s
+                    """,
+                    {"eid": execution_id},
+                )
+                if result.result_rows and result.result_rows[0][0] == "completed":
+                    completed += 1
+                    comparison_data = safe_json_parse(
+                        result.result_rows[0][1], default=None, field_name="comparison"
+                    )
+                    if comparison_data:
+                        all_comparisons.append(comparison_data)
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.error(f"Batch replay failed for trace {trace_id}: {e}")
+                failed += 1
+
+    # Run all replays with concurrency control
+    tasks = [run_single(trace_id) for trace_id in trace_ids]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Build batch summary
+    summary = _build_batch_summary(all_comparisons, completed, failed, len(trace_ids))
+
+    # Determine final status
+    if failed == 0:
+        final_status = "completed"
+    elif completed == 0:
+        final_status = "failed"
+    else:
+        final_status = "partial"
+
+    # Update batch job with final results
+    client.command(
+        """
+        ALTER TABLE batch_replay_jobs
+        UPDATE
+            status = %(status)s,
+            completed_traces = %(completed)s,
+            failed_traces = %(failed)s,
+            completed_at = now64(6),
+            summary = %(summary)s
+        WHERE batch_id = %(batch_id)s
+        """,
+        {
+            "batch_id": batch_id,
+            "status": final_status,
+            "completed": completed,
+            "failed": failed,
+            "summary": json.dumps(summary),
+        },
+    )
 
 
 # ============================================================================
@@ -340,6 +484,68 @@ class ReplayHistoryResponse(BaseModel):
 
 
 # ============================================================================
+# Batch Replay Models
+# ============================================================================
+
+
+class BatchReplayRequest(BaseModel):
+    """Request to trigger batch replay for multiple traces."""
+
+    trace_ids: list[str] = Field(..., min_length=1, max_length=50)
+    parameters: ReplayParameters = Field(default_factory=ReplayParameters)
+
+
+class BatchReplayResponse(BaseModel):
+    """Response after triggering batch replay."""
+
+    batch_id: str
+    status: str
+    total_traces: int
+    created_at: str
+
+
+class BatchStatusResponse(BaseModel):
+    """Status of a batch replay job."""
+
+    batch_id: str
+    project_id: str
+    status: str
+    trace_ids: list[str]
+    parameters: dict[str, Any]
+    total_traces: int
+    completed_traces: int
+    failed_traces: int
+    created_at: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+    summary: dict[str, Any] | None = None
+    executions: list[ReplayHistoryItem] | None = None
+
+
+class BatchListItem(BaseModel):
+    """Summary of a batch replay job for list view."""
+
+    batch_id: str
+    status: str
+    total_traces: int
+    completed_traces: int
+    failed_traces: int
+    created_at: str
+    completed_at: str | None = None
+    parameters: dict[str, Any]
+
+
+class BatchListResponse(BaseModel):
+    """Response for listing batch replay jobs."""
+
+    batches: list[BatchListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+# ============================================================================
 # API Endpoints
 # ============================================================================
 
@@ -362,6 +568,9 @@ async def list_replay_traces(
     # Validate inputs to prevent SQL injection
     project_id = InputValidator.validate_project_id(project_id)
     page, page_size = InputValidator.validate_pagination(page, page_size)
+
+    # Enforce team-scoped project access
+    await check_project_access_or_403(str(user.get("user_id", "")), project_id)
 
     # Build parameterized WHERE clause
     where_conditions = ["service_name LIKE %(project_pattern)s"]
@@ -445,9 +654,9 @@ async def get_replay_trace_detail(trace_id: str, user: dict = Depends(require_ti
     # Validate trace_id format
     trace_id = InputValidator.validate_uuid(trace_id, "trace_id")
 
-    # Query trace
+    # Query trace (include project_id for access check)
     trace_query = """
-        SELECT trace_id, service_name, started_at, duration_ms, status, attributes
+        SELECT trace_id, service_name, started_at, duration_ms, status, attributes, project_id
         FROM traces
         WHERE trace_id = %(trace_id)s
     """
@@ -458,6 +667,11 @@ async def get_replay_trace_detail(trace_id: str, user: dict = Depends(require_ti
         raise HTTPException(status_code=404, detail=f"Trace {trace_id} not found")
 
     trace_row = trace_result.result_rows[0]
+
+    # Enforce team-scoped project access
+    trace_project_id = trace_row[6]
+    if trace_project_id:
+        await check_project_access_or_403(str(user.get("user_id", "")), trace_project_id)
 
     # Query spans
     spans_query = """
@@ -525,6 +739,24 @@ async def execute_replay(
     execution_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
 
+    # Enforce monthly replay limit for Lunch Money tier
+    if user.get("tier") == "lunch-money":
+        client = get_clickhouse_client()
+        count_query = """
+            SELECT count() FROM replay_executions
+            WHERE project_id IN (
+                SELECT project_id FROM traces WHERE trace_id = %(trace_id)s
+            )
+            AND triggered_at >= toStartOfMonth(now64(6))
+        """
+        count_result = client.query(count_query, {"trace_id": request.trace_id})
+        monthly_count = count_result.result_rows[0][0] if count_result.result_rows else 0
+        if monthly_count >= 100:
+            raise HTTPException(
+                status_code=429,
+                detail="Monthly replay limit reached (100/month for Lunch Money tier). Upgrade to Pro for unlimited replays."
+            )
+
     # Extract project_id from trace (query to get it)
     client = get_clickhouse_client()
     project_query = """
@@ -538,6 +770,9 @@ async def execute_replay(
         raise HTTPException(status_code=404, detail=f"Trace {request.trace_id} not found")
 
     project_id = project_result.result_rows[0][0]
+
+    # Enforce team-scoped project access (member+ required to trigger replays)
+    await check_project_access_or_403(str(user.get("user_id", "")), project_id, "member")
 
     # Convert parameters to dict
     parameters = {
@@ -578,7 +813,7 @@ async def get_replay_execution_status(execution_id: str, user: dict = Depends(re
 
     query = """
         SELECT execution_id, trace_id, triggered_at, completed_at, status,
-               parameters, result, error
+               parameters, result, error, project_id
         FROM replay_executions
         WHERE execution_id = %(execution_id)s
     """
@@ -589,6 +824,11 @@ async def get_replay_execution_status(execution_id: str, user: dict = Depends(re
         raise HTTPException(status_code=404, detail=f"Execution {execution_id} not found")
 
     row = result.result_rows[0]
+
+    # Enforce team-scoped project access
+    exec_project_id = row[8]
+    if exec_project_id:
+        await check_project_access_or_403(str(user.get("user_id", "")), exec_project_id)
 
     # Parse JSON fields with safe parsing
     parameters = safe_json_parse(row[5], default={}, field_name="execution.parameters")
@@ -619,7 +859,7 @@ async def get_replay_comparison(execution_id: str, user: dict = Depends(require_
     execution_id = InputValidator.validate_uuid(execution_id, "execution_id")
 
     query = """
-        SELECT comparison, status
+        SELECT comparison, status, project_id
         FROM replay_executions
         WHERE execution_id = %(execution_id)s
     """
@@ -630,6 +870,11 @@ async def get_replay_comparison(execution_id: str, user: dict = Depends(require_
         raise HTTPException(status_code=404, detail=f"Execution {execution_id} not found")
 
     row = result.result_rows[0]
+
+    # Enforce team-scoped project access
+    exec_project_id = row[2]
+    if exec_project_id:
+        await check_project_access_or_403(str(user.get("user_id", "")), exec_project_id)
 
     # Check if completed
     if row[1] != "completed":
@@ -692,6 +937,9 @@ async def list_replay_history(
     project_id = InputValidator.validate_project_id(project_id)
     page, page_size = InputValidator.validate_pagination(page, page_size)
 
+    # Enforce team-scoped project access
+    await check_project_access_or_403(str(user.get("user_id", "")), project_id)
+
     # Count total
     count_query = """
         SELECT count() as total
@@ -753,6 +1001,246 @@ async def list_replay_history(
 
     return ReplayHistoryResponse(
         executions=executions,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+# ============================================================================
+# Batch Replay Endpoints
+# ============================================================================
+
+
+@router.post("/batch", response_model=BatchReplayResponse)
+async def create_batch_replay(
+    request: BatchReplayRequest,
+    background_tasks: BackgroundTasks,
+    project_id: str = Query(..., description="Project ID"),
+    user: dict = Depends(require_tier("pro")),
+) -> BatchReplayResponse:
+    """
+    Trigger a batch replay for multiple traces. Pro tier only.
+
+    Accepts up to 50 trace IDs and shared replay parameters.
+    Executes replays concurrently in the background.
+    """
+    # Validate project_id
+    project_id = InputValidator.validate_project_id(project_id)
+
+    # Enforce team-scoped project access (member+ required to trigger batch replays)
+    await check_project_access_or_403(str(user.get("user_id", "")), project_id, "member")
+
+    # Validate each trace_id
+    for tid in request.trace_ids:
+        InputValidator.validate_uuid(tid, "trace_id")
+
+    # Deduplicate trace_ids
+    unique_trace_ids = list(dict.fromkeys(request.trace_ids))
+
+    # Verify all traces exist
+    client = get_clickhouse_client()
+    placeholders = ", ".join(f"%(t{i})s" for i in range(len(unique_trace_ids)))
+    params: dict[str, Any] = {f"t{i}": tid for i, tid in enumerate(unique_trace_ids)}
+    count_result = client.query(
+        f"SELECT count() FROM traces WHERE trace_id IN ({placeholders})",
+        parameters=params,
+    )
+    found_count = count_result.result_rows[0][0] if count_result.result_rows else 0
+    if found_count != len(unique_trace_ids):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Some traces not found. Expected {len(unique_trace_ids)}, found {found_count}.",
+        )
+
+    batch_id = str(uuid.uuid4())
+    created_at = datetime.utcnow()
+
+    parameters = {
+        "model": request.parameters.model,
+        "temperature": request.parameters.temperature,
+        "system_prompt": request.parameters.system_prompt,
+        "max_tokens": request.parameters.max_tokens,
+        "stream": request.parameters.stream,
+    }
+
+    # Insert batch job record
+    client.command(
+        """
+        INSERT INTO batch_replay_jobs (
+            batch_id, project_id, user_id, status, trace_ids, parameters,
+            total_traces, created_at
+        ) VALUES (
+            %(batch_id)s, %(project_id)s, %(user_id)s, 'pending',
+            %(trace_ids)s, %(parameters)s, %(total_traces)s, now64(6)
+        )
+        """,
+        {
+            "batch_id": batch_id,
+            "project_id": project_id,
+            "user_id": user.get("user_id", ""),
+            "trace_ids": unique_trace_ids,
+            "parameters": json.dumps(parameters),
+            "total_traces": len(unique_trace_ids),
+        },
+    )
+
+    # Schedule background execution
+    background_tasks.add_task(
+        execute_batch_replay_in_background,
+        batch_id,
+        unique_trace_ids,
+        project_id,
+        parameters,
+    )
+
+    return BatchReplayResponse(
+        batch_id=batch_id,
+        status="pending",
+        total_traces=len(unique_trace_ids),
+        created_at=created_at.isoformat(),
+    )
+
+
+@router.get("/batch/{batch_id}", response_model=BatchStatusResponse)
+async def get_batch_status(
+    batch_id: str,
+    include_executions: bool = Query(False, description="Include individual execution details"),
+    user: dict = Depends(require_tier("pro")),
+) -> BatchStatusResponse:
+    """
+    Get the status of a batch replay job.
+
+    Optionally includes individual execution details.
+    """
+    batch_id = InputValidator.validate_uuid(batch_id, "batch_id")
+    client = get_clickhouse_client()
+
+    query = """
+        SELECT batch_id, project_id, status, trace_ids, parameters,
+               total_traces, completed_traces, failed_traces,
+               created_at, started_at, completed_at, error, summary
+        FROM batch_replay_jobs
+        WHERE batch_id = %(batch_id)s
+    """
+    result = client.query(query, {"batch_id": batch_id})
+
+    if not result.result_rows:
+        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
+
+    row = result.result_rows[0]
+
+    # Enforce team-scoped project access (project_id is row[1])
+    batch_project_id = row[1]
+    if batch_project_id:
+        await check_project_access_or_403(str(user.get("user_id", "")), batch_project_id)
+
+    executions = None
+    if include_executions:
+        exec_query = """
+            SELECT execution_id, trace_id, triggered_at, completed_at, status,
+                   parameters, result, comparison
+            FROM replay_executions
+            WHERE batch_id = %(batch_id)s
+            ORDER BY triggered_at ASC
+        """
+        exec_result = client.query(exec_query, {"batch_id": batch_id})
+        executions = []
+        for erow in exec_result.result_rows:
+            exec_params = safe_json_parse(erow[5], default={}, field_name="exec.parameters")
+            result_data = safe_json_parse(erow[6], default=None, field_name="exec.result")
+            comparison_data = safe_json_parse(erow[7], default=None, field_name="exec.comparison")
+            duration_ms = None
+            cost_delta = None
+            if result_data and comparison_data:
+                duration_ms = result_data.get("total_duration_ms")
+                orig_cost = comparison_data.get("original", {}).get("total_cost_usd", 0)
+                mod_cost = comparison_data.get("modified", {}).get("total_cost_usd", 0)
+                cost_delta = mod_cost - orig_cost
+            executions.append(ReplayHistoryItem(
+                execution_id=erow[0],
+                trace_id=erow[1],
+                triggered_at=erow[2].isoformat() if isinstance(erow[2], datetime) else str(erow[2]),
+                completed_at=erow[3].isoformat() if erow[3] and isinstance(erow[3], datetime) else None,
+                status=erow[4],
+                parameters=exec_params,
+                duration_ms=duration_ms,
+                cost_delta=cost_delta,
+            ))
+
+    return BatchStatusResponse(
+        batch_id=row[0],
+        project_id=row[1],
+        status=row[2],
+        trace_ids=row[3],
+        parameters=safe_json_parse(row[4], default={}, field_name="batch.parameters"),
+        total_traces=row[5],
+        completed_traces=row[6],
+        failed_traces=row[7],
+        created_at=row[8].isoformat() if isinstance(row[8], datetime) else str(row[8]),
+        started_at=row[9].isoformat() if row[9] and isinstance(row[9], datetime) else None,
+        completed_at=row[10].isoformat() if row[10] and isinstance(row[10], datetime) else None,
+        error=row[11] if row[11] else None,
+        summary=safe_json_parse(row[12], default=None, field_name="batch.summary"),
+        executions=executions,
+    )
+
+
+@router.get("/batch", response_model=BatchListResponse)
+async def list_batch_jobs(
+    project_id: str = Query(..., description="Project ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Page size"),
+    user: dict = Depends(require_tier("pro")),
+) -> BatchListResponse:
+    """
+    List batch replay jobs for a project.
+    """
+    project_id = InputValidator.validate_project_id(project_id)
+    page, page_size = InputValidator.validate_pagination(page, page_size)
+
+    # Enforce team-scoped project access
+    await check_project_access_or_403(str(user.get("user_id", "")), project_id)
+
+    client = get_clickhouse_client()
+
+    count_query = """
+        SELECT count() FROM batch_replay_jobs
+        WHERE project_id = %(project_id)s
+    """
+    count_result = client.query(count_query, {"project_id": project_id})
+    total = count_result.result_rows[0][0] if count_result.result_rows else 0
+
+    offset = (page - 1) * page_size
+    query = """
+        SELECT batch_id, status, total_traces, completed_traces, failed_traces,
+               created_at, completed_at, parameters
+        FROM batch_replay_jobs
+        WHERE project_id = %(project_id)s
+        ORDER BY created_at DESC
+        LIMIT %(page_size)s OFFSET %(offset)s
+    """
+    result = client.query(query, {
+        "project_id": project_id,
+        "page_size": page_size,
+        "offset": offset,
+    })
+
+    batches = []
+    for row in result.result_rows:
+        batches.append(BatchListItem(
+            batch_id=row[0],
+            status=row[1],
+            total_traces=row[2],
+            completed_traces=row[3],
+            failed_traces=row[4],
+            created_at=row[5].isoformat() if isinstance(row[5], datetime) else str(row[5]),
+            completed_at=row[6].isoformat() if row[6] and isinstance(row[6], datetime) else None,
+            parameters=safe_json_parse(row[7], default={}, field_name="batch.parameters"),
+        ))
+
+    return BatchListResponse(
+        batches=batches,
         total=total,
         page=page,
         page_size=page_size,

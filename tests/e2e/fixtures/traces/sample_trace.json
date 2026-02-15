@@ -1,0 +1,66 @@
+{
+  "trace_id": "e2e_test_trace_001",
+  "service_name": "e2e-test-agent",
+  "started_at": "2026-02-14T10:00:00.000000Z",
+  "completed_at": "2026-02-14T10:00:01.500000Z",
+  "duration_ms": 1500.0,
+  "status": "completed",
+  "root_span_id": "span_root_001",
+  "span_count": 3,
+  "attributes": {},
+  "spans": [
+    {
+      "span_id": "span_root_001",
+      "trace_id": "e2e_test_trace_001",
+      "parent_span_id": "",
+      "name": "agent-execution",
+      "span_type": "agent",
+      "service_name": "e2e-test-agent",
+      "started_at": "2026-02-14T10:00:00.000000Z",
+      "ended_at": "2026-02-14T10:00:01.500000Z",
+      "duration_ms": 1500.0,
+      "status": "completed",
+      "attributes": {},
+      "events": [],
+      "replay_snapshot": {}
+    },
+    {
+      "span_id": "span_tool_001",
+      "trace_id": "e2e_test_trace_001",
+      "parent_span_id": "span_root_001",
+      "name": "fetch-context",
+      "span_type": "tool",
+      "service_name": "e2e-test-agent",
+      "started_at": "2026-02-14T10:00:00.100000Z",
+      "ended_at": "2026-02-14T10:00:00.300000Z",
+      "duration_ms": 200.0,
+      "status": "completed",
+      "attributes": {"tool.name": "context_retriever"},
+      "events": [],
+      "replay_snapshot": {}
+    },
+    {
+      "span_id": "span_llm_001",
+      "trace_id": "e2e_test_trace_001",
+      "parent_span_id": "span_root_001",
+      "name": "llm-completion",
+      "span_type": "llm",
+      "service_name": "e2e-test-agent",
+      "started_at": "2026-02-14T10:00:00.300000Z",
+      "ended_at": "2026-02-14T10:00:01.400000Z",
+      "duration_ms": 1100.0,
+      "status": "completed",
+      "attributes": {
+        "llm.model": "gpt-4o-mini",
+        "llm.vendor": "openai",
+        "llm.prompt_tokens": 150,
+        "llm.completion_tokens": 200,
+        "llm.total_tokens": 350,
+        "llm.cost_usd": 0.0035,
+        "llm.latency_ms": 1100
+      },
+      "events": [],
+      "replay_snapshot": {}
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "findings": [
+    {
+      "type": "pii_exposure",
+      "severity": "high",
+      "description": "Email address detected in LLM prompt",
+      "location": "span llm-call-1, input prompt",
+      "evidence": "user@example.com found in prompt text",
+      "recommendation": "Sanitize PII before sending to LLM"
+    },
+    {
+      "type": "prompt_injection",
+      "severity": "medium",
+      "description": "Potential prompt injection attempt detected",
+      "location": "span llm-call-2, input prompt",
+      "evidence": "Input contains 'ignore previous instructions'",
+      "recommendation": "Add input validation and prompt injection detection"
+    }
+  ],
+  "summary": {
+    "total_findings": 2,
+    "critical": 0,
+    "high": 1,
+    "medium": 1,
+    "low": 0
+  },
+  "scan_metadata": {
+    "model_used": "gpt-4o-mini",
+    "tokens_used": 450,
+    "scan_duration_ms": 1200
+  }
+}

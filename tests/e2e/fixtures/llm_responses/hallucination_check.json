@@ -1,0 +1,11 @@
+{
+  "is_hallucination": false,
+  "confidence": 0.92,
+  "analysis": "The LLM response is consistent with the provided context and does not contain fabricated information.",
+  "evidence": [
+    "Claim 1: 'The API returns JSON format' - VERIFIED: Matches documentation",
+    "Claim 2: 'Rate limit is 100 requests per minute' - VERIFIED: Matches config"
+  ],
+  "model_used": "gpt-4o-mini",
+  "tokens_used": 320
+}

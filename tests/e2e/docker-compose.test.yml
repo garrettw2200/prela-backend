@@ -1,0 +1,86 @@
+version: '3.8'
+
+# E2E Test Infrastructure
+# Runs on different ports to avoid conflicts with dev stack
+# Uses tmpfs for fast, disposable storage
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: prela-test-postgres
+    environment:
+      POSTGRES_USER: prela_test
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: prela_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ./init_db.sql:/docker-entrypoint-initdb.d/01_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prela_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.1
+    container_name: prela-test-clickhouse
+    ports:
+      - "8124:8123"  # HTTP interface
+      - "9001:9000"  # Native protocol
+    tmpfs:
+      - /var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: prela_test
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: testpass
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: prela-test-redis
+    ports:
+      - "6380:6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: prela-test-redpanda
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 256M
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19093
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19093
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+    ports:
+      - "19093:19093"
+    tmpfs:
+      - /var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  default:
+    name: prela-test-network

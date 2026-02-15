@@ -4,10 +4,17 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from shared import get_clickhouse_client
+from shared import get_clickhouse_client, settings
+from shared.database import (
+    assign_project_to_team,
+    execute as db_execute,
+    get_accessible_project_ids,
+    get_projects_for_team,
+)
+from app.auth import get_current_user, check_project_access_or_403
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +110,16 @@ def generate_webhook_url(project_id: str, base_url: str = "https://api.prela.dev
 async def list_projects(
     limit: int = 100,
     offset: int = 0,
+    team_id: str | None = Query(default=None, description="Filter by team"),
+    user: dict = Depends(get_current_user),
 ) -> list[ProjectSummary]:
-    """List all projects with statistics.
+    """List projects with statistics, scoped by team membership.
 
     Args:
         limit: Maximum number of projects to return
         offset: Number of projects to skip
+        team_id: Optional team ID to filter by
+        user: Authenticated user
 
     Returns:
         List of projects with stats
@@ -116,8 +127,37 @@ async def list_projects(
     try:
         client = get_clickhouse_client()
 
-        # Query projects with stats
-        query = """
+        # Determine which projects the user can see
+        allowed_project_ids: list[str] | None = None  # None = all projects
+
+        if settings.teams_enabled:
+            if team_id:
+                team_projects = await get_projects_for_team(team_id)
+                allowed_project_ids = [tp["project_id"] for tp in team_projects]
+            else:
+                allowed_project_ids = await get_accessible_project_ids(
+                    str(user["user_id"])
+                )
+
+            # Grace period: if user has no team-assigned projects at all, show everything
+            if allowed_project_ids is not None and len(allowed_project_ids) == 0:
+                allowed_project_ids = None
+
+        # Build query with optional project filter
+        where_clause = ""
+        parameters: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if allowed_project_ids is not None:
+            if len(allowed_project_ids) == 0:
+                return []
+            placeholders = ", ".join(
+                f"%(pid_{i})s" for i in range(len(allowed_project_ids))
+            )
+            where_clause = f"WHERE p.project_id IN ({placeholders})"
+            for i, pid in enumerate(allowed_project_ids):
+                parameters[f"pid_{i}"] = pid
+
+        query = f"""
             SELECT
                 p.project_id,
                 p.name,
@@ -129,12 +169,13 @@ async def list_projects(
                 uniqExact(JSONExtractString(t.attributes, 'n8n.workflow.id')) AS workflow_count
             FROM projects p
             LEFT JOIN traces t ON p.project_id = t.project_id
+            {where_clause}
             GROUP BY p.project_id, p.name, p.description, p.webhook_url, p.created_at, p.updated_at
             ORDER BY p.created_at DESC
             LIMIT %(limit)s OFFSET %(offset)s
         """
 
-        result = client.query(query, parameters={"limit": limit, "offset": offset})
+        result = client.query(query, parameters=parameters)
 
         projects = []
         for row in result.result_rows:
@@ -159,11 +200,17 @@ async def list_projects(
 
 
 @router.post("/projects", response_model=Project, status_code=201)
-async def create_project(project: ProjectCreate) -> Project:
+async def create_project(
+    project: ProjectCreate,
+    team_id: str | None = Query(default=None, description="Team to assign project to"),
+    user: dict = Depends(get_current_user),
+) -> Project:
     """Create a new project.
 
     Args:
         project: Project creation data
+        team_id: Optional team ID to assign the project to
+        user: Authenticated user
 
     Returns:
         Created project
@@ -195,10 +242,6 @@ async def create_project(project: ProjectCreate) -> Project:
 
         # Insert project
         now = datetime.utcnow()
-        insert_query = """
-            INSERT INTO projects (project_id, name, description, webhook_url, created_at, updated_at)
-            VALUES
-        """
         client.insert(
             "projects",
             [
@@ -221,6 +264,17 @@ async def create_project(project: ProjectCreate) -> Project:
             ],
         )
 
+        # Auto-assign to team if teams are enabled
+        if settings.teams_enabled and team_id:
+            try:
+                await assign_project_to_team(project_id, team_id)
+                logger.info(f"Auto-assigned project {project_id} to team {team_id}")
+            except Exception as e:
+                # Log but don't fail — project was created successfully
+                logger.warning(
+                    f"Failed to auto-assign project {project_id} to team {team_id}: {e}"
+                )
+
         return Project(
             project_id=project_id,
             name=project.name,
@@ -238,18 +292,24 @@ async def create_project(project: ProjectCreate) -> Project:
 
 
 @router.get("/projects/{project_id}", response_model=Project)
-async def get_project(project_id: str) -> Project:
+async def get_project(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+) -> Project:
     """Get project details.
 
     Args:
         project_id: Project ID
+        user: Authenticated user
 
     Returns:
         Project details
 
     Raises:
-        HTTPException: If project not found
+        HTTPException: If project not found or access denied
     """
+    await check_project_access_or_403(str(user["user_id"]), project_id, "viewer")
+
     try:
         client = get_clickhouse_client()
 
@@ -283,19 +343,26 @@ async def get_project(project_id: str) -> Project:
 
 
 @router.put("/projects/{project_id}", response_model=Project)
-async def update_project(project_id: str, update: ProjectUpdate) -> Project:
+async def update_project(
+    project_id: str,
+    update: ProjectUpdate,
+    user: dict = Depends(get_current_user),
+) -> Project:
     """Update project details.
 
     Args:
         project_id: Project ID
         update: Fields to update
+        user: Authenticated user
 
     Returns:
         Updated project
 
     Raises:
-        HTTPException: If project not found
+        HTTPException: If project not found or access denied
     """
+    await check_project_access_or_403(str(user["user_id"]), project_id, "member")
+
     try:
         client = get_clickhouse_client()
 
@@ -323,7 +390,7 @@ async def update_project(project_id: str, update: ProjectUpdate) -> Project:
 
         if not update_fields:
             # No fields to update, just return current project
-            return await get_project(project_id)
+            return await get_project(project_id, user=user)
 
         # Add updated_at
         update_fields.append("updated_at = %(updated_at)s")
@@ -338,7 +405,7 @@ async def update_project(project_id: str, update: ProjectUpdate) -> Project:
         client.command(update_query, parameters=params)
 
         # Return updated project
-        return await get_project(project_id)
+        return await get_project(project_id, user=user)
 
     except HTTPException:
         raise
@@ -348,15 +415,21 @@ async def update_project(project_id: str, update: ProjectUpdate) -> Project:
 
 
 @router.delete("/projects/{project_id}", status_code=204)
-async def delete_project(project_id: str) -> None:
+async def delete_project(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+) -> None:
     """Delete a project.
 
     Args:
         project_id: Project ID
+        user: Authenticated user
 
     Raises:
-        HTTPException: If project not found
+        HTTPException: If project not found or access denied
     """
+    await check_project_access_or_403(str(user["user_id"]), project_id, "admin")
+
     try:
         client = get_clickhouse_client()
 
@@ -370,12 +443,21 @@ async def delete_project(project_id: str) -> None:
         if result.result_rows[0][0] == 0:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # Delete project
+        # Delete project from ClickHouse
         delete_query = """
             ALTER TABLE projects
             DELETE WHERE project_id = %(project_id)s
         """
         client.command(delete_query, parameters={"project_id": project_id})
+
+        # Clean up team assignment in PostgreSQL
+        if settings.teams_enabled:
+            try:
+                await db_execute(
+                    "DELETE FROM project_teams WHERE project_id = $1", project_id
+                )
+            except Exception as e:
+                logger.warning(f"Failed to clean up project_teams for {project_id}: {e}")
 
         # Note: Traces and spans remain (orphaned but with project_id for historical purposes)
 
@@ -387,15 +469,21 @@ async def delete_project(project_id: str) -> None:
 
 
 @router.get("/projects/{project_id}/webhook-status")
-async def get_webhook_status(project_id: str) -> dict[str, Any]:
+async def get_webhook_status(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Get webhook receiver status for project.
 
     Args:
         project_id: Project ID
+        user: Authenticated user
 
     Returns:
         Webhook status including last event timestamp
     """
+    await check_project_access_or_403(str(user["user_id"]), project_id, "viewer")
+
     try:
         client = get_clickhouse_client()
 

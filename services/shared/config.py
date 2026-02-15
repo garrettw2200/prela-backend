@@ -81,10 +81,14 @@ class Settings(BaseSettings):
     stripe_pro_ai_drift_price_id: str = ""  # $2 per 10 baselines
     stripe_pro_ai_nlp_price_id: str = ""  # $3 per 1k searches
     stripe_pro_retention_price_id: str = ""  # $10 per 30 days
+    stripe_pro_ai_debug_price_id: str = ""  # $1 per 10 debug sessions
 
     # Data Source Integration
     data_source_encryption_key: str = ""  # Fernet key for encrypting API secrets
     data_source_sync_interval_minutes: int = 15
+
+    # Team Collaboration
+    teams_enabled: bool = True  # Feature flag for team features (TEAMS_ENABLED env var)
 
     # Drift Detection
     drift_check_interval_minutes: int = 15  # How often to check for anomalies

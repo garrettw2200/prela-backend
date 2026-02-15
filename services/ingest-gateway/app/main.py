@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,24 @@ from shared.database import get_user_by_clerk_id, get_subscription_by_user_id, v
 from shared.rate_limiter import get_rate_limiter, close_rate_limiter
 from shared.otlp_normalizer import normalize_otlp_traces
 import hashlib
+
+
+def _parse_dt(val):
+    """Parse a datetime value for ClickHouse DateTime64 columns.
+
+    Accepts ISO 8601 strings, datetime objects, or None.
+    Returns a datetime object or None.
+    """
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        try:
+            return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return None
+    return None
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -188,8 +207,8 @@ async def ingest_trace(
             "trace_id": trace_id,
             "project_id": project_id,
             "service_name": trace_data.get("service_name", "unknown"),
-            "started_at": trace_data.get("started_at"),
-            "completed_at": trace_data.get("completed_at"),
+            "started_at": _parse_dt(trace_data.get("started_at")),
+            "completed_at": _parse_dt(trace_data.get("completed_at")),
             "duration_ms": trace_data.get("duration_ms", 0),
             "status": trace_data.get("status", "unknown"),
             "root_span_id": trace_data.get("root_span_id", ""),
@@ -215,8 +234,8 @@ async def ingest_trace(
                     "name": span.get("name", ""),
                     "span_type": span.get("span_type", "unknown"),
                     "service_name": trace_data.get("service_name", "unknown"),
-                    "started_at": span.get("started_at"),
-                    "ended_at": span.get("ended_at"),
+                    "started_at": _parse_dt(span.get("started_at")),
+                    "ended_at": _parse_dt(span.get("ended_at")),
                     "duration_ms": span.get("duration_ms", 0),
                     "status": span.get("status", "unknown"),
                     "attributes": json.dumps(span.get("attributes", {})),
@@ -306,8 +325,8 @@ async def ingest_span(
             "name": span_data.get("name", ""),
             "span_type": span_data.get("span_type", "unknown"),
             "service_name": span_data.get("service_name", "unknown"),
-            "started_at": span_data.get("started_at"),
-            "ended_at": span_data.get("ended_at"),
+            "started_at": _parse_dt(span_data.get("started_at")),
+            "ended_at": _parse_dt(span_data.get("ended_at")),
             "duration_ms": span_data.get("duration_ms", 0),
             "status": span_data.get("status", "unknown"),
             "attributes": json.dumps(span_data.get("attributes", {})),
@@ -438,8 +457,8 @@ async def ingest_batch(
                 "name": span_data.get("name", ""),
                 "span_type": span_data.get("span_type", "unknown"),
                 "service_name": span_data.get("service_name", "unknown"),
-                "started_at": span_data.get("started_at"),
-                "ended_at": span_data.get("ended_at"),
+                "started_at": _parse_dt(span_data.get("started_at")),
+                "ended_at": _parse_dt(span_data.get("ended_at")),
                 "duration_ms": span_data.get("duration_ms", 0),
                 "status": span_data.get("status", "unknown"),
                 "attributes": json.dumps(span_data.get("attributes", {})),

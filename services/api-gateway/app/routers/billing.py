@@ -74,6 +74,7 @@ async def create_checkout_session(
     try:
         body = await request.json()
         tier = body.get("tier")
+        team_id = body.get("team_id")
         success_url = body.get("success_url", "https://prela.app/billing/success")
         cancel_url = body.get("cancel_url", "https://prela.app/billing/cancel")
 
@@ -100,6 +101,7 @@ async def create_checkout_session(
                 "user_id": user["user_id"],
                 "clerk_id": user["clerk_id"],
                 "tier": tier,
+                "team_id": team_id or "",
             },
         )
 
@@ -278,6 +280,7 @@ async def handle_checkout_completed(session: dict):
     # Extract metadata
     user_id = session["metadata"].get("user_id")
     tier = session["metadata"].get("tier")
+    team_id = session["metadata"].get("team_id") or None
     stripe_customer_id = session["customer"]
     stripe_subscription_id = session["subscription"]
 
@@ -285,13 +288,14 @@ async def handle_checkout_completed(session: dict):
         logger.error(f"Missing metadata in checkout session: {session['id']}")
         return
 
-    # Update subscription
+    # Update subscription (linked to team for per-team billing)
     await update_subscription_tier(
         user_id=user_id,
         tier=tier,
         stripe_customer_id=stripe_customer_id,
         stripe_subscription_id=stripe_subscription_id,
         status="active",
+        team_id=team_id,
     )
 
     # Generate API key if user doesn't have one
@@ -390,12 +394,14 @@ async def handle_invoice_created(invoice: dict):
             logger.warning(f"No user_id in subscription metadata: {stripe_subscription_id}")
             return
 
+        team_id = metadata.get("team_id") or None
+
         # Get billing period from invoice
         period_start = datetime.fromtimestamp(invoice["period_start"], timezone.utc)
         period_end = datetime.fromtimestamp(invoice["period_end"], timezone.utc)
 
-        # Get usage for this period
-        usage = get_usage_for_period(user_id, period_start, period_end)
+        # Get usage for this period (async, queries real data)
+        usage = await get_usage_for_period(user_id, period_start, period_end, team_id)
 
         # Calculate overages
         tracker = OverageTracker()

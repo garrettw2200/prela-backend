@@ -15,6 +15,7 @@ OVERAGE_PRICING = {
     "ai_drift_per_10": Decimal("2.00"),
     "ai_nlp_per_1k": Decimal("3.00"),
     "retention_per_30_days": Decimal("10.00"),
+    "ai_debug_per_10": Decimal("1.00"),
 }
 
 # Base inclusions for Pro tier
@@ -25,6 +26,7 @@ PRO_BASE_LIMITS = {
     "ai_drift_baselines": 50,
     "ai_nlp_searches": 1_000,
     "retention_days": 90,
+    "ai_debug_sessions": 50,
 }
 
 
@@ -139,6 +141,19 @@ class OverageTracker:
                 f"NLP search overage: {overage_searches:,} searches = ${overages['ai_nlp']}"
             )
 
+        # Calculate debug session overages
+        if usage.get("ai_debug_sessions", 0) > PRO_BASE_LIMITS["ai_debug_sessions"]:
+            overage_sessions = (
+                usage["ai_debug_sessions"] - PRO_BASE_LIMITS["ai_debug_sessions"]
+            )
+            overage_units = Decimal(overage_sessions) / Decimal(10)  # Per 10
+            cost = overage_units * OVERAGE_PRICING["ai_debug_per_10"]
+            overages["ai_debug"] = cost.quantize(Decimal("0.01"))
+            total += overages["ai_debug"]
+            logger.info(
+                f"Debug session overage: {overage_sessions} sessions = ${overages['ai_debug']}"
+            )
+
         # Calculate retention overages
         if usage.get("retention_days", 90) > PRO_BASE_LIMITS["retention_days"]:
             overage_days = usage["retention_days"] - PRO_BASE_LIMITS["retention_days"]
@@ -204,12 +219,17 @@ class OverageTracker:
                     ai_nlp_searches_used,
                     ai_nlp_searches_overage,
                     ai_nlp_searches_cost,
+                    ai_debug_sessions_included,
+                    ai_debug_sessions_used,
+                    ai_debug_sessions_overage,
+                    ai_debug_sessions_cost,
                     retention_days_included,
                     retention_days_used,
                     retention_overage_cost,
                     total_overage_cost
                 ) VALUES (
                     %s, %s, %s,
+                    %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
@@ -261,6 +281,15 @@ class OverageTracker:
                     - PRO_BASE_LIMITS["ai_nlp_searches"],
                 ),
                 overages.get("ai_nlp", Decimal("0.00")),
+                # AI debug
+                PRO_BASE_LIMITS["ai_debug_sessions"],
+                usage.get("ai_debug_sessions", 0),
+                max(
+                    0,
+                    usage.get("ai_debug_sessions", 0)
+                    - PRO_BASE_LIMITS["ai_debug_sessions"],
+                ),
+                overages.get("ai_debug", Decimal("0.00")),
                 # Retention
                 PRO_BASE_LIMITS["retention_days"],
                 usage.get("retention_days", 90),
@@ -288,14 +317,15 @@ class OverageTracker:
         stripe_subscription_id: str,
         overages: Dict[str, Decimal],
     ):
-        """Report usage to Stripe for metered billing.
+        """Report overages to Stripe by adding invoice line items.
+
+        Adds one-off InvoiceItems to the customer's upcoming invoice for each
+        overage category. This approach avoids the complexity of metered
+        subscription items and directly charges the calculated overage amounts.
 
         Args:
-            stripe_subscription_id: Stripe subscription ID
-            overages: Calculated overage costs
-
-        Note: This will be called during invoice creation to add
-        usage-based line items to the invoice.
+            stripe_subscription_id: Stripe subscription ID.
+            overages: Calculated overage costs from calculate_overages().
         """
         try:
             import stripe
@@ -303,68 +333,103 @@ class OverageTracker:
 
             stripe.api_key = settings.stripe_secret_key
 
-            # Report trace overages
-            if overages.get("traces", Decimal("0")) > Decimal("0"):
-                # Convert cost to units (e.g., $80 = 10 units of 100k traces @ $8 each)
-                units = int(
-                    overages["traces"] / OVERAGE_PRICING["traces_per_100k"]
+            # Get the subscription to find the customer ID
+            subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+            customer_id = subscription["customer"]
+
+            descriptions = {
+                "traces": "Trace overage (beyond 1M included)",
+                "users": "Additional team members (beyond 5 included)",
+                "ai_hallucination": "AI hallucination check overage",
+                "ai_drift": "AI drift baseline overage",
+                "ai_nlp": "AI NLP search overage",
+                "ai_debug": "AI debug session overage",
+                "retention": "Extended retention overage",
+            }
+
+            for overage_type, amount in overages.items():
+                if overage_type == "total" or amount <= Decimal("0"):
+                    continue
+
+                stripe.InvoiceItem.create(
+                    customer=customer_id,
+                    amount=int(amount * 100),  # Convert dollars to cents
+                    currency="usd",
+                    description=descriptions.get(
+                        overage_type, f"Pro tier overage: {overage_type}"
+                    ),
+                    subscription=stripe_subscription_id,
                 )
-                if units > 0:
-                    stripe.SubscriptionItem.create_usage_record(
-                        settings.stripe_pro_traces_price_id,
-                        quantity=units,
-                        timestamp=int(datetime.now(timezone.utc).timestamp()),
-                    )
-                    logger.info(
-                        f"Reported {units} trace overage units to Stripe"
-                    )
-
-            # Report user overages
-            if overages.get("users", Decimal("0")) > Decimal("0"):
-                units = int(overages["users"] / OVERAGE_PRICING["users"])
-                if units > 0:
-                    stripe.SubscriptionItem.create_usage_record(
-                        settings.stripe_pro_users_price_id,
-                        quantity=units,
-                        timestamp=int(datetime.now(timezone.utc).timestamp()),
-                    )
-                    logger.info(
-                        f"Reported {units} user overage units to Stripe"
-                    )
-
-            # Similar for AI features...
-            # (Implementation simplified for brevity - would add all features)
+                logger.info(
+                    f"Added {overage_type} overage of ${amount} to customer {customer_id}"
+                )
 
         except Exception as e:
-            logger.error(f"Error reporting to Stripe: {e}")
-            # Don't raise - we'll try again on next invoice
+            logger.error(f"Error reporting overages to Stripe: {e}")
+            # Don't raise - allow invoice to proceed without overages
 
 
 # Helper function to get current period usage
-def get_usage_for_period(
-    subscription_id: str, period_start: datetime, period_end: datetime
+async def get_usage_for_period(
+    subscription_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    team_id: Optional[str] = None,
 ) -> Dict[str, int]:
     """Get usage data for a billing period from various sources.
 
     Args:
-        subscription_id: Subscription UUID
-        period_start: Start of period
-        period_end: End of period
+        subscription_id: User ID (used as subscription identifier).
+        period_start: Start of period.
+        period_end: End of period.
+        team_id: Team UUID for counting team members.
 
     Returns:
-        Dictionary with usage counts
+        Dictionary with usage counts.
     """
-    # This would query:
-    # - Traces from usage_records or rate_limiter
-    # - Users from subscriptions/team members
-    # - AI feature usage from Redis counters
-
-    # Placeholder implementation
-    return {
+    usage: Dict[str, int] = {
         "traces": 0,
-        "users": 5,
+        "users": 1,  # At minimum, the owner
         "ai_hallucination_checks": 0,
         "ai_drift_baselines": 0,
         "ai_nlp_searches": 0,
+        "ai_debug_sessions": 0,
         "retention_days": 90,
     }
+
+    # Count team members from PostgreSQL
+    if team_id:
+        try:
+            from shared.database import get_team_member_count
+
+            member_count = await get_team_member_count(team_id)
+            usage["users"] = member_count
+        except Exception as e:
+            logger.warning(f"Failed to get team member count: {e}")
+
+    # Get AI feature usage from Redis
+    try:
+        from app.middleware.ai_feature_limiter import get_ai_feature_limiter
+
+        limiter = await get_ai_feature_limiter()
+        for feature, key in [
+            ("hallucination", "ai_hallucination_checks"),
+            ("drift", "ai_drift_baselines"),
+            ("nlp", "ai_nlp_searches"),
+            ("debug", "ai_debug_sessions"),
+        ]:
+            usage[key] = await limiter.get_usage(subscription_id, feature)
+    except Exception as e:
+        logger.warning(f"Failed to get AI feature usage from Redis: {e}")
+
+    # Get trace count from subscription's monthly_usage
+    try:
+        from shared.database import get_subscription_by_user_id
+
+        subscription = await get_subscription_by_user_id(subscription_id)
+        if subscription:
+            usage["traces"] = subscription.get("monthly_usage", 0)
+    except Exception as e:
+        logger.warning(f"Failed to get trace usage: {e}")
+
+    return usage

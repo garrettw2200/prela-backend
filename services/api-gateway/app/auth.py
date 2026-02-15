@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Tuple
 
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 import httpx
@@ -18,6 +18,8 @@ from shared.database import (
     create_free_subscription,
     verify_api_key,
     update_api_key_last_used,
+    fetch_one,
+    check_project_access,
 )
 
 logger = logging.getLogger(__name__)
@@ -351,3 +353,171 @@ def require_tier(minimum_tier: str):
         return user
 
     return tier_dependency
+
+
+# Team RBAC
+
+ROLE_HIERARCHY = ["viewer", "member", "admin", "owner"]
+
+
+async def get_user_team_role(user_id: str, team_id: str) -> str | None:
+    """Get a user's role in a specific team.
+
+    Args:
+        user_id: User UUID.
+        team_id: Team UUID.
+
+    Returns:
+        Role string ('owner', 'admin', 'member', 'viewer') or None if not a member.
+    """
+    result = await fetch_one(
+        "SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2",
+        team_id, user_id,
+    )
+    return result["role"] if result else None
+
+
+def require_team_role(minimum_role: str):
+    """Dependency factory for requiring a minimum team role.
+
+    Extracts team_id from path parameters and verifies the authenticated
+    user has at least the minimum_role in that team.
+
+    Usage:
+        @router.put("/teams/{team_id}/settings")
+        async def update_settings(
+            team_id: str,
+            user: dict = Depends(require_team_role("admin")),
+        ):
+            # Only admin or owner can access
+
+    Args:
+        minimum_role: Minimum role required (viewer, member, admin, owner).
+
+    Returns:
+        FastAPI dependency function.
+    """
+
+    async def team_role_dependency(
+        request: Request,
+        user: dict = Depends(get_current_user),
+    ) -> dict:
+        team_id = request.path_params.get("team_id")
+        if not team_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="team_id path parameter required",
+            )
+
+        user_role = await get_user_team_role(str(user["user_id"]), team_id)
+
+        if user_role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not a member of this team",
+            )
+
+        if ROLE_HIERARCHY.index(user_role) < ROLE_HIERARCHY.index(minimum_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This action requires {minimum_role} role or higher. "
+                f"Your role: {user_role}.",
+            )
+
+        user["team_id"] = team_id
+        user["team_role"] = user_role
+        return user
+
+    return team_role_dependency
+
+
+def require_project_access(minimum_role: str = "viewer"):
+    """Dependency factory for requiring project access via team membership.
+
+    Extracts project_id from path parameters and verifies the user
+    has access through at least one team with the minimum role.
+
+    Usage:
+        @router.get("/projects/{project_id}/traces")
+        async def list_traces(
+            project_id: str,
+            user: dict = Depends(require_project_access("viewer")),
+        ):
+            # Any team member with viewer+ role can access
+
+    Args:
+        minimum_role: Minimum role required (viewer, member, admin, owner).
+
+    Returns:
+        FastAPI dependency function.
+    """
+
+    async def project_access_dependency(
+        request: Request,
+        user: dict = Depends(get_current_user),
+    ) -> dict:
+        project_id = request.path_params.get("project_id")
+        if not project_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="project_id path parameter required",
+            )
+
+        access = await check_project_access(str(user["user_id"]), project_id)
+
+        if access is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this project",
+            )
+
+        if ROLE_HIERARCHY.index(access["role"]) < ROLE_HIERARCHY.index(minimum_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This action requires {minimum_role} role or higher. "
+                f"Your role: {access['role']}.",
+            )
+
+        user["team_id"] = str(access["team_id"])
+        user["team_role"] = access["role"]
+        user["project_id"] = project_id
+        return user
+
+    return project_access_dependency
+
+
+async def check_project_access_or_403(
+    user_id: str, project_id: str, min_role: str = "viewer"
+) -> None:
+    """Check team-scoped project access, raise 403 if denied.
+
+    Unlike require_project_access() which is a FastAPI dependency factory for
+    path parameters, this is a plain async function that can be called from any
+    endpoint with a project_id from any source (query param, ClickHouse lookup, etc).
+
+    Grace period: projects with no team assignments are accessible to all
+    authenticated users (backward compat for pre-migration projects).
+    """
+    if not settings.teams_enabled:
+        return
+
+    access = await check_project_access(str(user_id), project_id)
+    if access is None:
+        # Check if project has ANY team assignment
+        has_assignment = await fetch_one(
+            "SELECT 1 FROM project_teams WHERE project_id = $1 LIMIT 1",
+            project_id,
+        )
+        if has_assignment:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this project",
+            )
+        # No assignment — grace period, allow access
+        return
+
+    if ROLE_HIERARCHY.index(access["role"]) < ROLE_HIERARCHY.index(min_role):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This action requires {min_role} role or higher. Your role: {access['role']}.",
+        )

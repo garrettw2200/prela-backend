@@ -326,6 +326,7 @@ async def update_subscription_tier(
     stripe_customer_id: str | None = None,
     stripe_subscription_id: str | None = None,
     status: str = "active",
+    team_id: str | None = None,
 ) -> dict[str, Any]:
     """Update subscription tier and Stripe IDs.
 
@@ -335,6 +336,7 @@ async def update_subscription_tier(
         stripe_customer_id: Stripe customer ID.
         stripe_subscription_id: Stripe subscription ID.
         status: Subscription status.
+        team_id: Team UUID to link subscription to (optional).
 
     Returns:
         Updated subscription record.
@@ -363,6 +365,7 @@ async def update_subscription_tier(
             stripe_subscription_id = $6,
             current_period_start = $7,
             current_period_end = $8,
+            team_id = COALESCE($9, team_id),
             updated_at = NOW()
         WHERE user_id = $1
         RETURNING *
@@ -375,6 +378,7 @@ async def update_subscription_tier(
         stripe_subscription_id,
         period_start,
         period_end,
+        team_id,
     )
 
 
@@ -615,4 +619,489 @@ async def delete_data_source(source_id: str, user_id: str) -> None:
         "DELETE FROM data_sources WHERE id = $1 AND user_id = $2",
         source_id,
         user_id,
+    )
+
+
+# Team collaboration helper functions
+
+
+async def create_team(name: str, slug: str, owner_id: str) -> dict[str, Any]:
+    """Create a new team and add the owner as a member.
+
+    Args:
+        name: Team display name.
+        slug: URL-safe unique identifier.
+        owner_id: User UUID of the team owner.
+
+    Returns:
+        Created team record.
+    """
+    async with get_db_connection() as conn:
+        async with conn.transaction():
+            team = await conn.fetchrow(
+                """
+                INSERT INTO teams (name, slug, owner_id)
+                VALUES ($1, $2, $3)
+                RETURNING *
+                """,
+                name, slug, owner_id,
+            )
+            team = dict(team)
+            await conn.execute(
+                """
+                INSERT INTO team_members (team_id, user_id, role)
+                VALUES ($1, $2, 'owner')
+                """,
+                team["id"], owner_id,
+            )
+            return team
+
+
+async def get_teams_for_user(user_id: str) -> list[dict[str, Any]]:
+    """Get all teams a user belongs to.
+
+    Args:
+        user_id: User UUID.
+
+    Returns:
+        List of team records with the user's role.
+    """
+    return await fetch_all(
+        """
+        SELECT t.*, tm.role as user_role
+        FROM teams t
+        JOIN team_members tm ON t.id = tm.team_id
+        WHERE tm.user_id = $1
+        ORDER BY t.created_at DESC
+        """,
+        user_id,
+    )
+
+
+async def get_team_by_id(team_id: str) -> dict[str, Any] | None:
+    """Get team by ID.
+
+    Args:
+        team_id: Team UUID.
+
+    Returns:
+        Team record or None.
+    """
+    return await fetch_one(
+        "SELECT * FROM teams WHERE id = $1",
+        team_id,
+    )
+
+
+async def update_team(team_id: str, name: str) -> dict[str, Any]:
+    """Update team name.
+
+    Args:
+        team_id: Team UUID.
+        name: New team name.
+
+    Returns:
+        Updated team record.
+    """
+    return await insert_returning(
+        "UPDATE teams SET name = $2, updated_at = NOW() WHERE id = $1 RETURNING *",
+        team_id, name,
+    )
+
+
+async def delete_team(team_id: str) -> None:
+    """Delete a team (cascades to members, invitations, project assignments).
+
+    Args:
+        team_id: Team UUID.
+    """
+    await execute("DELETE FROM teams WHERE id = $1", team_id)
+
+
+# Team member helper functions
+
+
+async def get_team_members(team_id: str) -> list[dict[str, Any]]:
+    """Get all members of a team with user details.
+
+    Args:
+        team_id: Team UUID.
+
+    Returns:
+        List of member records with user info.
+    """
+    return await fetch_all(
+        """
+        SELECT tm.id, tm.team_id, tm.user_id, tm.role, tm.joined_at,
+               u.email, u.full_name, u.profile_image_url
+        FROM team_members tm
+        JOIN users u ON tm.user_id = u.id
+        WHERE tm.team_id = $1
+        ORDER BY tm.joined_at ASC
+        """,
+        team_id,
+    )
+
+
+async def add_team_member(
+    team_id: str, user_id: str, role: str = "member", invited_by: str | None = None
+) -> dict[str, Any]:
+    """Add a user to a team.
+
+    Args:
+        team_id: Team UUID.
+        user_id: User UUID to add.
+        role: Role to assign (owner, admin, member, viewer).
+        invited_by: User UUID who invited this member.
+
+    Returns:
+        Created team_members record.
+    """
+    return await insert_returning(
+        """
+        INSERT INTO team_members (team_id, user_id, role, invited_by)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+        """,
+        team_id, user_id, role, invited_by,
+    )
+
+
+async def update_team_member_role(team_id: str, user_id: str, role: str) -> dict[str, Any]:
+    """Update a team member's role.
+
+    Args:
+        team_id: Team UUID.
+        user_id: User UUID.
+        role: New role (owner, admin, member, viewer).
+
+    Returns:
+        Updated team_members record.
+    """
+    return await insert_returning(
+        """
+        UPDATE team_members SET role = $3
+        WHERE team_id = $1 AND user_id = $2
+        RETURNING *
+        """,
+        team_id, user_id, role,
+    )
+
+
+async def remove_team_member(team_id: str, user_id: str) -> None:
+    """Remove a user from a team.
+
+    Args:
+        team_id: Team UUID.
+        user_id: User UUID to remove.
+    """
+    await execute(
+        "DELETE FROM team_members WHERE team_id = $1 AND user_id = $2",
+        team_id, user_id,
+    )
+
+
+async def get_team_member_count(team_id: str) -> int:
+    """Get the number of members in a team.
+
+    Args:
+        team_id: Team UUID.
+
+    Returns:
+        Member count.
+    """
+    result = await fetch_one(
+        "SELECT COUNT(*) as count FROM team_members WHERE team_id = $1",
+        team_id,
+    )
+    return result["count"] if result else 0
+
+
+# Team invitation helper functions
+
+
+async def create_team_invitation(
+    team_id: str, email: str, role: str, invited_by: str, token: str, expires_at: Any
+) -> dict[str, Any]:
+    """Create a team invitation.
+
+    Args:
+        team_id: Team UUID.
+        email: Invitee's email address.
+        role: Role to assign on acceptance.
+        invited_by: User UUID of inviter.
+        token: Unique invitation token.
+        expires_at: Expiration timestamp.
+
+    Returns:
+        Created invitation record.
+    """
+    return await insert_returning(
+        """
+        INSERT INTO team_invitations (team_id, email, role, invited_by, token, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+        """,
+        team_id, email, role, invited_by, token, expires_at,
+    )
+
+
+async def get_invitation_by_token(token: str) -> dict[str, Any] | None:
+    """Get invitation by unique token.
+
+    Args:
+        token: Invitation token.
+
+    Returns:
+        Invitation record with team name, or None.
+    """
+    return await fetch_one(
+        """
+        SELECT ti.*, t.name as team_name
+        FROM team_invitations ti
+        JOIN teams t ON ti.team_id = t.id
+        WHERE ti.token = $1
+        """,
+        token,
+    )
+
+
+async def accept_invitation(invitation_id: str) -> dict[str, Any]:
+    """Mark an invitation as accepted.
+
+    Args:
+        invitation_id: Invitation UUID.
+
+    Returns:
+        Updated invitation record.
+    """
+    return await insert_returning(
+        """
+        UPDATE team_invitations
+        SET status = 'accepted', accepted_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        """,
+        invitation_id,
+    )
+
+
+async def get_pending_invitations(team_id: str) -> list[dict[str, Any]]:
+    """Get all pending invitations for a team.
+
+    Args:
+        team_id: Team UUID.
+
+    Returns:
+        List of pending invitation records with inviter info.
+    """
+    return await fetch_all(
+        """
+        SELECT ti.*, u.email as invited_by_email, u.full_name as invited_by_name
+        FROM team_invitations ti
+        JOIN users u ON ti.invited_by = u.id
+        WHERE ti.team_id = $1 AND ti.status = 'pending'
+        ORDER BY ti.created_at DESC
+        """,
+        team_id,
+    )
+
+
+async def revoke_invitation(invitation_id: str) -> dict[str, Any]:
+    """Revoke a pending invitation.
+
+    Args:
+        invitation_id: Invitation UUID.
+
+    Returns:
+        Updated invitation record.
+    """
+    return await insert_returning(
+        """
+        UPDATE team_invitations
+        SET status = 'revoked', updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        """,
+        invitation_id,
+    )
+
+
+# Project access helper functions
+
+
+async def assign_project_to_team(project_id: str, team_id: str) -> dict[str, Any]:
+    """Assign a ClickHouse project to a team.
+
+    Args:
+        project_id: ClickHouse project ID.
+        team_id: Team UUID.
+
+    Returns:
+        Created project_teams record.
+    """
+    return await insert_returning(
+        """
+        INSERT INTO project_teams (project_id, team_id)
+        VALUES ($1, $2)
+        RETURNING *
+        """,
+        project_id, team_id,
+    )
+
+
+async def remove_project_from_team(project_id: str, team_id: str) -> None:
+    """Remove a project assignment from a team.
+
+    Args:
+        project_id: ClickHouse project ID.
+        team_id: Team UUID.
+    """
+    await execute(
+        "DELETE FROM project_teams WHERE project_id = $1 AND team_id = $2",
+        project_id, team_id,
+    )
+
+
+async def get_projects_for_team(team_id: str) -> list[dict[str, Any]]:
+    """Get all project IDs assigned to a team.
+
+    Args:
+        team_id: Team UUID.
+
+    Returns:
+        List of project_teams records.
+    """
+    return await fetch_all(
+        "SELECT * FROM project_teams WHERE team_id = $1 ORDER BY created_at DESC",
+        team_id,
+    )
+
+
+async def check_project_access(user_id: str, project_id: str) -> dict[str, Any] | None:
+    """Check if a user has access to a project via any team membership.
+
+    Args:
+        user_id: User UUID.
+        project_id: ClickHouse project ID.
+
+    Returns:
+        Dict with team_id and role if access exists, or None.
+    """
+    return await fetch_one(
+        """
+        SELECT pt.team_id, tm.role
+        FROM project_teams pt
+        JOIN team_members tm ON pt.team_id = tm.team_id
+        WHERE pt.project_id = $1 AND tm.user_id = $2
+        LIMIT 1
+        """,
+        project_id, user_id,
+    )
+
+
+async def get_accessible_project_ids(user_id: str) -> list[str]:
+    """Get all project IDs accessible to a user via team membership.
+
+    Args:
+        user_id: User UUID.
+
+    Returns:
+        List of project_id strings.
+    """
+    rows = await fetch_all(
+        """
+        SELECT DISTINCT pt.project_id
+        FROM project_teams pt
+        JOIN team_members tm ON pt.team_id = tm.team_id
+        WHERE tm.user_id = $1
+        """,
+        user_id,
+    )
+    return [row["project_id"] for row in rows]
+
+
+# Trace comment helper functions
+
+
+async def create_trace_comment(
+    trace_id: str, project_id: str, user_id: str, content: str,
+    parent_comment_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a comment on a trace.
+
+    Args:
+        trace_id: Trace ID (from ClickHouse).
+        project_id: Project ID (from ClickHouse).
+        user_id: Commenting user UUID.
+        content: Comment text.
+        parent_comment_id: Parent comment UUID for threaded replies.
+
+    Returns:
+        Created comment record.
+    """
+    return await insert_returning(
+        """
+        INSERT INTO trace_comments (trace_id, project_id, user_id, content, parent_comment_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+        """,
+        trace_id, project_id, user_id, content, parent_comment_id,
+    )
+
+
+async def get_trace_comments(trace_id: str, project_id: str) -> list[dict[str, Any]]:
+    """Get all comments for a trace with user details.
+
+    Args:
+        trace_id: Trace ID.
+        project_id: Project ID.
+
+    Returns:
+        List of comment records with user info, ordered by creation time.
+    """
+    return await fetch_all(
+        """
+        SELECT tc.*, u.email, u.full_name, u.profile_image_url
+        FROM trace_comments tc
+        JOIN users u ON tc.user_id = u.id
+        WHERE tc.trace_id = $1 AND tc.project_id = $2
+        ORDER BY tc.created_at ASC
+        """,
+        trace_id, project_id,
+    )
+
+
+async def update_trace_comment(comment_id: str, user_id: str, content: str) -> dict[str, Any]:
+    """Update a trace comment (only by the author).
+
+    Args:
+        comment_id: Comment UUID.
+        user_id: User UUID (for ownership check).
+        content: New comment text.
+
+    Returns:
+        Updated comment record.
+    """
+    return await insert_returning(
+        """
+        UPDATE trace_comments
+        SET content = $3, updated_at = NOW()
+        WHERE id = $1 AND user_id = $2
+        RETURNING *
+        """,
+        comment_id, user_id, content,
+    )
+
+
+async def delete_trace_comment(comment_id: str, user_id: str) -> None:
+    """Delete a trace comment (only by the author).
+
+    Args:
+        comment_id: Comment UUID.
+        user_id: User UUID (for ownership check).
+    """
+    await execute(
+        "DELETE FROM trace_comments WHERE id = $1 AND user_id = $2",
+        comment_id, user_id,
     )

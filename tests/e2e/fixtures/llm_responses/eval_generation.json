@@ -1,0 +1,31 @@
+{
+  "suite_name": "Generated Suite - 2026-02-14",
+  "suite_yaml": "name: Generated Suite - 2026-02-14\ntests:\n  - name: test_agent_response_quality\n    trace_filter:\n      service_name: test-service\n    assertions:\n      - type: llm_response_quality\n        threshold: 0.8\n  - name: test_latency_within_bounds\n    trace_filter:\n      service_name: test-service\n    assertions:\n      - type: duration_less_than\n        max_ms: 5000\n",
+  "cases_generated": 12,
+  "traces_analyzed": 50,
+  "patterns_found": 5,
+  "pattern_summary": [
+    {
+      "category": "response_quality",
+      "subcategory": "consistency",
+      "count": 8,
+      "description": "Response quality patterns across LLM calls"
+    },
+    {
+      "category": "latency",
+      "subcategory": "outliers",
+      "count": 3,
+      "description": "Latency outlier patterns detected"
+    },
+    {
+      "category": "error_handling",
+      "subcategory": "timeout",
+      "count": 2,
+      "description": "Timeout error handling patterns"
+    }
+  ],
+  "status": "completed",
+  "error": null,
+  "started_at": "2026-02-14T10:00:00Z",
+  "completed_at": "2026-02-14T10:01:30Z"
+}
