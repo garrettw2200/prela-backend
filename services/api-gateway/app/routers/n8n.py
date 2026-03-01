@@ -14,6 +14,8 @@ from shared.clickhouse import get_clickhouse_client, insert_span, insert_trace
 from shared.validation import InputValidator
 from shared.webhook_rate_limiter import get_webhook_rate_limiter
 
+from ..auth import get_current_user
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -655,7 +657,7 @@ def _map_n8n_node_type(node_type: str) -> str:
 @router.get("/workflows", response_model=WorkflowListResponse)
 async def list_workflows(
     project_id: str = Query(..., description="Project ID"),
-    api_key: str = Depends(verify_api_key),
+    user: dict = Depends(get_current_user),
 ) -> WorkflowListResponse:
     """
     List all n8n workflows with 24h metrics.
@@ -719,7 +721,7 @@ async def list_workflows(
 async def get_workflow_detail(
     workflow_id: str,
     project_id: str = Query(..., description="Project ID"),
-    api_key: str = Depends(verify_api_key),
+    user: dict = Depends(get_current_user),
 ) -> WorkflowDetailResponse:
     """
     Get detailed information for a specific workflow.
@@ -870,7 +872,7 @@ async def list_executions(
     workflow_id: str,
     project_id: str = Query(..., description="Project ID"),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of executions"),
-    api_key: str = Depends(verify_api_key),
+    user: dict = Depends(get_current_user),
 ) -> ExecutionListResponse:
     """List recent executions for a workflow."""
     client = get_clickhouse_client()
@@ -921,7 +923,7 @@ async def list_executions(
 async def list_ai_nodes(
     workflow_id: str,
     project_id: str = Query(..., description="Project ID"),
-    api_key: str = Depends(verify_api_key),
+    user: dict = Depends(get_current_user),
 ) -> AINodeListResponse:
     """
     Get AI node usage metrics for a workflow.
@@ -985,7 +987,7 @@ async def list_ai_nodes(
 async def get_execution_timeline(
     execution_id: str,
     project_id: str = Query(..., description="Project ID"),
-    api_key: str = Depends(verify_api_key),
+    user: dict = Depends(get_current_user),
 ) -> ExecutionTimelineResponse:
     """
     Get execution timeline showing node execution order and timing.
