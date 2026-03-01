@@ -556,7 +556,7 @@ async def list_replay_traces(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     since: str | None = Query(None, description="ISO 8601 timestamp to filter traces"),
-    user: dict = Depends(require_tier("lunch-money")),
+    user: dict = Depends(require_tier("free")),
 ) -> ReplayTracesResponse:
     """
     List traces with replay capability.
@@ -645,7 +645,7 @@ async def list_replay_traces(
 
 
 @router.get("/traces/{trace_id}", response_model=ReplayTraceDetail)
-async def get_replay_trace_detail(trace_id: str, user: dict = Depends(require_tier("lunch-money"))) -> ReplayTraceDetail:
+async def get_replay_trace_detail(trace_id: str, user: dict = Depends(require_tier("free"))) -> ReplayTraceDetail:
     """
     Get detailed trace information with replay snapshot data.
     """
@@ -728,7 +728,7 @@ async def get_replay_trace_detail(trace_id: str, user: dict = Depends(require_ti
 
 @router.post("/execute", response_model=ReplayExecutionResponse)
 async def execute_replay(
-    request: ReplayExecutionRequest, background_tasks: BackgroundTasks, user: dict = Depends(require_tier("lunch-money"))
+    request: ReplayExecutionRequest, background_tasks: BackgroundTasks, user: dict = Depends(require_tier("free"))
 ) -> ReplayExecutionResponse:
     """
     Trigger a replay execution.
@@ -800,7 +800,7 @@ async def execute_replay(
 
 
 @router.get("/executions/{execution_id}", response_model=ReplayExecutionStatus)
-async def get_replay_execution_status(execution_id: str, user: dict = Depends(require_tier("lunch-money"))) -> ReplayExecutionStatus:
+async def get_replay_execution_status(execution_id: str, user: dict = Depends(require_tier("free"))) -> ReplayExecutionStatus:
     """
     Get the status of a replay execution.
 
@@ -847,7 +847,7 @@ async def get_replay_execution_status(execution_id: str, user: dict = Depends(re
 
 
 @router.get("/executions/{execution_id}/comparison", response_model=ReplayComparisonResponse)
-async def get_replay_comparison(execution_id: str, user: dict = Depends(require_tier("lunch-money"))) -> ReplayComparisonResponse:
+async def get_replay_comparison(execution_id: str, user: dict = Depends(require_tier("free"))) -> ReplayComparisonResponse:
     """
     Get comparison results between original and replayed execution.
 
@@ -924,7 +924,7 @@ async def list_replay_history(
     project_id: str = Query(..., description="Project ID to filter executions"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
-    user: dict = Depends(require_tier("lunch-money")),
+    user: dict = Depends(require_tier("free")),
 ) -> ReplayHistoryResponse:
     """
     List replay execution history.

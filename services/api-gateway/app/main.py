@@ -94,7 +94,7 @@ app.include_router(teams.router, tags=["teams"])
 app.include_router(comments.router, tags=["comments"])
 
 
-@app.websocket("/ws/{project_id}")
+@app.websocket("/api/v1/ws/{project_id}")
 async def websocket_route(websocket: WebSocket, project_id: str):
     """WebSocket endpoint for real-time project updates.
 
