@@ -71,7 +71,7 @@ class SecuritySummaryResponse(BaseModel):
 async def scan_trace(
     trace_id: str,
     project_id: str = Query(..., description="Project ID"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> list[SecurityScanResponse]:
     """Scan a specific trace for security issues on-demand.
 
@@ -141,7 +141,7 @@ async def scan_trace(
 async def get_security_summary(
     project_id: str = Query(..., description="Project ID"),
     time_window: str = Query("7d", description="Time window (7d, 30d, 90d)"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> SecuritySummaryResponse:
     """Get aggregated security findings from pre-computed analysis results.
 

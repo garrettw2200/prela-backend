@@ -1017,7 +1017,7 @@ async def create_batch_replay(
     request: BatchReplayRequest,
     background_tasks: BackgroundTasks,
     project_id: str = Query(..., description="Project ID"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> BatchReplayResponse:
     """
     Trigger a batch replay for multiple traces. Pro tier only.
@@ -1106,7 +1106,7 @@ async def create_batch_replay(
 async def get_batch_status(
     batch_id: str,
     include_executions: bool = Query(False, description="Include individual execution details"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> BatchStatusResponse:
     """
     Get the status of a batch replay job.
@@ -1191,7 +1191,7 @@ async def list_batch_jobs(
     project_id: str = Query(..., description="Project ID"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> BatchListResponse:
     """
     List batch replay jobs for a project.

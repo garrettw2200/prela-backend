@@ -119,7 +119,7 @@ async def search_traces(
     project_id: str = Query(..., description="Project ID"),
     query: str = Query(..., description="Search query"),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of results"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> dict[str, Any]:
     """Search traces by content.
 

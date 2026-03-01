@@ -205,7 +205,7 @@ async def trigger_eval_generation(
     request: EvalGenerationRequest,
     background_tasks: BackgroundTasks,
     project_id: str = Query(..., description="Project ID"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> EvalGenerationResponse:
     """Trigger eval suite generation from production traces.
 
@@ -256,7 +256,7 @@ async def trigger_eval_generation(
 async def get_generation_status(
     generation_id: str,
     project_id: str = Query(..., description="Project ID"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> EvalGenerationStatus:
     """Get the status of an eval generation run."""
     try:
@@ -306,7 +306,7 @@ async def get_generation_status(
 async def download_eval_suite(
     generation_id: str,
     project_id: str = Query(..., description="Project ID"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> Response:
     """Download a completed eval suite as a YAML file."""
     try:
@@ -360,7 +360,7 @@ async def list_eval_generations(
     project_id: str = Query(..., description="Project ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> EvalGenerationHistoryResponse:
     """List past eval generation runs for a project."""
     try:

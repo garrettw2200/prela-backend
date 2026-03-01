@@ -510,7 +510,7 @@ async def analyze_hallucinations(
         le=1.0,
         description="Minimum similarity score to consider a claim grounded (0.0-1.0)",
     ),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> list[HallucinationAnalysisResponse]:
     """
     Analyze LLM spans in a trace for hallucinations.

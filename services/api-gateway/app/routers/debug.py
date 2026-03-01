@@ -76,7 +76,7 @@ async def debug_trace(
     trace_id: str,
     project_id: str = Query(..., description="Project ID"),
     force: bool = Query(False, description="Force re-analysis (skip cache)"),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> DebugAnalysisResponse:
     """Debug a trace — returns root cause analysis and fix suggestions.
 
