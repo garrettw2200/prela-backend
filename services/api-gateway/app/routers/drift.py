@@ -306,7 +306,7 @@ async def list_baselines(
     project_id: str,
     agent_name: str | None = Query(None),
     limit: int = Query(10, ge=1, le=100),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> dict[str, Any]:
     """List baselines for a project.
 
@@ -381,7 +381,7 @@ async def calculate_baselines(
     project_id: str,
     agent_name: str | None = Query(None),
     window_days: int = Query(7, ge=1, le=30),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> dict[str, Any]:
     """Calculate baselines for agents in a project.
 
@@ -448,7 +448,7 @@ async def check_drift(
     agent_name: str | None = Query(None),
     lookback_hours: int = Query(24, ge=1, le=168),
     sensitivity: float = Query(2.0, ge=1.0, le=4.0),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> dict[str, Any]:
     """Check for drift in agent behavior.
 
@@ -579,7 +579,7 @@ async def check_drift(
 
 
 @router.post("/projects/{project_id}/alerts")
-async def create_alert(project_id: str, alert: DriftAlert, user: dict = Depends(require_tier("pro"))) -> dict[str, Any]:
+async def create_alert(project_id: str, alert: DriftAlert, user: dict = Depends(require_tier("free"))) -> dict[str, Any]:
     """Store a drift alert.
 
     Args:
@@ -687,7 +687,7 @@ async def list_alerts(
     status: str | None = Query(None),
     severity: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> dict[str, Any]:
     """List drift alerts for a project.
 
@@ -774,7 +774,7 @@ async def list_alerts(
 
 
 @router.get("/projects/{project_id}/alerts/{alert_id}")
-async def get_alert(project_id: str, alert_id: str, user: dict = Depends(require_tier("pro"))) -> dict[str, Any]:
+async def get_alert(project_id: str, alert_id: str, user: dict = Depends(require_tier("free"))) -> dict[str, Any]:
     """Get a specific alert by ID.
 
     Args:
@@ -836,7 +836,7 @@ async def get_alert(project_id: str, alert_id: str, user: dict = Depends(require
 
 @router.patch("/projects/{project_id}/alerts/{alert_id}")
 async def update_alert(
-    project_id: str, alert_id: str, update: UpdateAlertRequest, user: dict = Depends(require_tier("pro"))
+    project_id: str, alert_id: str, update: UpdateAlertRequest, user: dict = Depends(require_tier("free"))
 ) -> dict[str, Any]:
     """Update an alert's status.
 
@@ -967,7 +967,7 @@ async def update_alert(
 
 @router.post("/projects/{project_id}/alert-rules")
 async def create_alert_rule(
-    project_id: str, rule: CreateAlertRuleRequest, user: dict = Depends(require_tier("pro"))
+    project_id: str, rule: CreateAlertRuleRequest, user: dict = Depends(require_tier("free"))
 ) -> dict[str, Any]:
     """Create a new alert rule.
 
@@ -1039,7 +1039,7 @@ async def list_alert_rules(
     project_id: str,
     enabled: bool | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
-    user: dict = Depends(require_tier("pro")),
+    user: dict = Depends(require_tier("free")),
 ) -> dict[str, Any]:
     """List alert rules for a project.
 
@@ -1109,7 +1109,7 @@ async def list_alert_rules(
 
 
 @router.get("/projects/{project_id}/alert-rules/{rule_id}")
-async def get_alert_rule(project_id: str, rule_id: str, user: dict = Depends(require_tier("pro"))) -> dict[str, Any]:
+async def get_alert_rule(project_id: str, rule_id: str, user: dict = Depends(require_tier("free"))) -> dict[str, Any]:
     """Get a specific alert rule.
 
     Args:
@@ -1170,7 +1170,7 @@ async def get_alert_rule(project_id: str, rule_id: str, user: dict = Depends(req
 
 @router.patch("/projects/{project_id}/alert-rules/{rule_id}")
 async def update_alert_rule(
-    project_id: str, rule_id: str, update: UpdateAlertRuleRequest, user: dict = Depends(require_tier("pro"))
+    project_id: str, rule_id: str, update: UpdateAlertRuleRequest, user: dict = Depends(require_tier("free"))
 ) -> dict[str, Any]:
     """Update an alert rule.
 
@@ -1273,7 +1273,7 @@ async def update_alert_rule(
 
 
 @router.delete("/projects/{project_id}/alert-rules/{rule_id}")
-async def delete_alert_rule(project_id: str, rule_id: str, user: dict = Depends(require_tier("pro"))) -> dict[str, Any]:
+async def delete_alert_rule(project_id: str, rule_id: str, user: dict = Depends(require_tier("free"))) -> dict[str, Any]:
     """Delete an alert rule.
 
     Args:
