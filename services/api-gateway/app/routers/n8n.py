@@ -691,13 +691,13 @@ async def list_workflows(
     ORDER BY last_execution DESC
     """
 
-    result = client.execute(
+    result = client.query(
         query,
-        {
+        parameters={
             "project_id": project_id,
             "start_time": yesterday,
         },
-    )
+    ).result_rows
 
     workflows = [
         N8nWorkflow(
@@ -754,14 +754,14 @@ async def get_workflow_detail(
     GROUP BY workflow_id, workflow_name
     """
 
-    summary_result = client.execute(
+    summary_result = client.query(
         summary_query,
-        {
+        parameters={
             "project_id": project_id,
             "workflow_id": workflow_id,
             "start_time": yesterday,
         },
-    )
+    ).result_rows
 
     if not summary_result:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -797,13 +797,13 @@ async def get_workflow_detail(
     LIMIT 50
     """
 
-    executions_result = client.execute(
+    executions_result = client.query(
         executions_query,
-        {
+        parameters={
             "project_id": project_id,
             "workflow_id": workflow_id,
         },
-    )
+    ).result_rows
 
     executions = [
         N8nExecution(
@@ -838,14 +838,14 @@ async def get_workflow_detail(
     ORDER BY call_count DESC
     """
 
-    nodes_result = client.execute(
+    nodes_result = client.query(
         nodes_query,
-        {
+        parameters={
             "project_id": project_id,
             "workflow_id": workflow_id,
             "start_time": yesterday,
         },
-    )
+    ).result_rows
 
     ai_nodes = [
         N8nAINode(
@@ -894,14 +894,14 @@ async def list_executions(
     LIMIT %(limit)s
     """
 
-    result = client.execute(
+    result = client.query(
         query,
-        {
+        parameters={
             "project_id": project_id,
             "workflow_id": workflow_id,
             "limit": limit,
         },
-    )
+    ).result_rows
 
     executions = [
         N8nExecution(
@@ -956,14 +956,14 @@ async def list_ai_nodes(
     ORDER BY call_count DESC
     """
 
-    result = client.execute(
+    result = client.query(
         query,
-        {
+        parameters={
             "project_id": project_id,
             "workflow_id": workflow_id,
             "start_time": yesterday,
         },
-    )
+    ).result_rows
 
     nodes = [
         N8nAINode(
@@ -1010,13 +1010,13 @@ async def get_execution_timeline(
     LIMIT 1
     """
 
-    trace_result = client.execute(
+    trace_result = client.query(
         trace_query,
-        {
+        parameters={
             "project_id": project_id,
             "execution_id": execution_id,
         },
-    )
+    ).result_rows
 
     if not trace_result:
         raise HTTPException(status_code=404, detail="Execution not found")
@@ -1041,13 +1041,13 @@ async def get_execution_timeline(
     ORDER BY started_at ASC
     """
 
-    spans_result = client.execute(
+    spans_result = client.query(
         spans_query,
-        {
+        parameters={
             "project_id": project_id,
             "execution_id": execution_id,
         },
-    )
+    ).result_rows
 
     # Process spans into timeline nodes
     nodes = []
