@@ -172,21 +172,6 @@ class BaselineCalculator:
         Args:
             baseline: Baseline metrics dictionary.
         """
-        insert_query = """
-            INSERT INTO agent_baselines (
-                baseline_id, project_id, agent_name, service_name,
-                window_start, window_end, sample_size,
-                duration_mean, duration_stddev, duration_p50, duration_p95, duration_p99,
-                duration_min, duration_max,
-                token_usage_mean, token_usage_stddev, token_usage_p50, token_usage_p95,
-                tool_calls_mean, tool_calls_stddev,
-                response_length_mean, response_length_stddev,
-                success_rate, error_count,
-                cost_mean, cost_total
-            )
-            VALUES
-        """
-
         self.client.insert(
             "agent_baselines",
             [
@@ -218,6 +203,17 @@ class BaselineCalculator:
                     baseline["cost_mean"],
                     baseline["cost_total"],
                 ]
+            ],
+            column_names=[
+                "baseline_id", "project_id", "agent_name", "service_name",
+                "window_start", "window_end", "sample_size",
+                "duration_mean", "duration_stddev", "duration_p50", "duration_p95", "duration_p99",
+                "duration_min", "duration_max",
+                "token_usage_mean", "token_usage_stddev", "token_usage_p50", "token_usage_p95",
+                "tool_calls_mean", "tool_calls_stddev",
+                "response_length_mean", "response_length_stddev",
+                "success_rate", "error_count",
+                "cost_mean", "cost_total",
             ],
         )
 
@@ -323,7 +319,7 @@ class BaselineCalculator:
             WHERE project_id = %(project_id)s
               AND span_type = 'agent'
               AND started_at >= %(window_start)s
-              AND JSONHas(attributes, 'agent.name')
+              AND JSONExtractString(attributes, 'agent.name') != ''
         """
 
         result = self.client.query(
