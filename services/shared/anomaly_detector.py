@@ -88,7 +88,7 @@ class AnomalyDetector:
                 avg(JSONExtractUInt(attributes, 'llm.total_tokens')) AS token_usage_mean,
                 avg(JSONExtractUInt(attributes, 'tool.call_count')) AS tool_calls_mean,
                 avg(length(JSONExtractString(attributes, 'llm.response'))) AS response_length_mean,
-                countIf(status = 'completed') / count() AS success_rate,
+                countIf(status = 'success') / count() AS success_rate,
                 avg(JSONExtractFloat(attributes, 'llm.cost_usd')) AS cost_mean
             FROM spans
             WHERE project_id = %(project_id)s

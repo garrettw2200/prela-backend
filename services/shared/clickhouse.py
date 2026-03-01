@@ -166,7 +166,7 @@ async def init_clickhouse_schema(client: Client) -> None:
             toDate(started_at) AS date,
             count() AS execution_count,
             countIf(status = 'error') AS error_count,
-            countIf(status = 'completed') AS success_count,
+            countIf(status = 'success') AS success_count,
             avg(duration_ms) AS avg_duration_ms,
             quantile(0.95)(duration_ms) AS p95_duration_ms,
             quantile(0.99)(duration_ms) AS p99_duration_ms

@@ -85,7 +85,7 @@ class BaselineCalculator:
                 stddevPop(length(JSONExtractString(attributes, 'llm.response'))) AS response_length_stddev,
 
                 -- Success metrics
-                countIf(status = 'completed') / count() AS success_rate,
+                countIf(status = 'success') / count() AS success_rate,
                 countIf(status = 'error') AS error_count,
 
                 -- Cost metrics
@@ -312,6 +312,8 @@ class BaselineCalculator:
         Returns:
             Number of baselines calculated.
         """
+        window_start = datetime.utcnow() - timedelta(days=self.window_days)
+
         # Get unique agents from recent traces
         query = """
             SELECT DISTINCT
@@ -320,13 +322,16 @@ class BaselineCalculator:
             FROM spans
             WHERE project_id = %(project_id)s
               AND span_type = 'agent'
-              AND started_at >= now() - INTERVAL %(window_days)s DAY
+              AND started_at >= %(window_start)s
               AND JSONHas(attributes, 'agent.name')
         """
 
         result = self.client.query(
             query,
-            parameters={"project_id": project_id, "window_days": self.window_days},
+            parameters={
+                "project_id": project_id,
+                "window_start": window_start.isoformat(),
+            },
         )
 
         agents = [(row[0], row[1]) for row in result.result_rows if row[0]]
