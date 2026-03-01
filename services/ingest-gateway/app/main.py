@@ -203,6 +203,23 @@ async def ingest_trace(
         # Use user_id as project_id (each user has their own project)
         project_id = user["user_id"]
 
+        # Ensure a project row exists for this user (upsert via INSERT IF NOT EXISTS pattern)
+        service_name_for_project = trace_data.get("service_name") or "default"
+        clickhouse_client.command(
+            """
+            INSERT INTO projects (project_id, name, description, webhook_url)
+            SELECT %(pid)s, %(name)s, '', %(webhook)s
+            WHERE NOT EXISTS (
+                SELECT 1 FROM projects WHERE project_id = %(pid)s
+            )
+            """,
+            parameters={
+                "pid": project_id,
+                "name": service_name_for_project,
+                "webhook": f"https://ingest.prela.dev/v1/n8n/webhook?project={project_id}",
+            },
+        )
+
         # Write directly to ClickHouse
         # Extract trace-level data
         trace_row = {
