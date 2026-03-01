@@ -323,7 +323,7 @@ async def init_clickhouse_schema(client: Client) -> None:
             -- Rule conditions
             agent_name Nullable(String),  -- Null = all agents
             metric_name Nullable(String),  -- Null = all metrics
-            severity_threshold Enum8('low' = .1, 'medium' = 2, 'high' = 3, 'critical' = 4),
+            severity_threshold Enum8('low' = 1, 'medium' = 2, 'high' = 3, 'critical' = 4),
             change_percent_min Nullable(Float64),  -- Minimum % change to trigger
 
             -- Notification configuration
