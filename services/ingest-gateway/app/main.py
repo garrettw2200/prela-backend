@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from shared import settings
-from shared.clickhouse import get_clickhouse_client
+from shared.clickhouse import get_clickhouse_client, init_clickhouse_schema
 from shared.database import get_user_by_clerk_id, get_subscription_by_user_id, verify_api_key
 from shared.rate_limiter import get_rate_limiter, close_rate_limiter
 from shared.otlp_normalizer import normalize_otlp_traces
@@ -50,9 +50,11 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Starting Ingest Gateway ({settings.environment})")
 
-    # Initialize ClickHouse client
+    # Initialize ClickHouse client and ensure schema exists
     clickhouse_client = get_clickhouse_client()
     logger.info("ClickHouse client initialized")
+    await init_clickhouse_schema(clickhouse_client)
+    logger.info("ClickHouse schema initialized")
 
     # Initialize rate limiter
     await get_rate_limiter()

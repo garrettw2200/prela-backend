@@ -159,6 +159,10 @@ async def create_user(clerk_id: str, email: str, full_name: str | None = None, p
         """
         INSERT INTO users (clerk_id, email, full_name, profile_image_url)
         VALUES ($1, $2, $3, $4)
+        ON CONFLICT (clerk_id) DO UPDATE
+            SET email = EXCLUDED.email,
+                full_name = EXCLUDED.full_name,
+                profile_image_url = EXCLUDED.profile_image_url
         RETURNING *
         """,
         clerk_id,
