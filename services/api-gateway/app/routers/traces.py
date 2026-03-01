@@ -36,7 +36,8 @@ async def list_traces(
     try:
         client = get_clickhouse_client()
         traces = await query_traces(
-            client, service_name=service_name, start_time=start_time, end_time=end_time, limit=limit
+            client, project_id=project_id, service_name=service_name,
+            start_time=start_time, end_time=end_time, limit=limit
         )
         return {"traces": traces, "count": len(traces), "limit": limit}
     except Exception as e:

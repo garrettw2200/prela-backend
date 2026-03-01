@@ -414,6 +414,7 @@ async def init_clickhouse_schema(client: Client) -> None:
 
 async def query_traces(
     client: Client,
+    project_id: str | None = None,
     service_name: str | None = None,
     start_time: str | None = None,
     end_time: str | None = None,
@@ -423,16 +424,21 @@ async def query_traces(
 
     Args:
         client: ClickHouse client instance.
+        project_id: Filter by project ID.
         service_name: Filter by service name.
         start_time: Filter by start time (ISO format).
         end_time: Filter by end time (ISO format).
         limit: Maximum number of traces to return.
 
     Returns:
-        List of trace records.
+        List of trace records as dicts.
     """
     conditions = []
     params = {}
+
+    if project_id:
+        conditions.append("project_id = %(project_id)s")
+        params["project_id"] = project_id
 
     if service_name:
         conditions.append("service_name = %(service_name)s")
@@ -449,7 +455,11 @@ async def query_traces(
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     query = f"""
-        SELECT *
+        SELECT
+            trace_id, project_id, service_name,
+            started_at, completed_at, duration_ms,
+            status, root_span_id, span_count,
+            attributes, source, created_at
         FROM traces
         {where_clause}
         ORDER BY started_at DESC
@@ -458,7 +468,10 @@ async def query_traces(
     params["limit"] = limit
 
     result = client.query(query, parameters=params)
-    return result.result_rows
+    columns = ["trace_id", "project_id", "service_name", "started_at", "completed_at",
+               "duration_ms", "status", "root_span_id", "span_count", "attributes",
+               "source", "created_at"]
+    return [dict(zip(columns, row)) for row in result.result_rows]
 
 
 async def query_spans(
@@ -471,17 +484,26 @@ async def query_spans(
         trace_id: Trace ID to query.
 
     Returns:
-        List of span records.
+        List of span records as dicts.
     """
     query = """
-        SELECT *
+        SELECT
+            span_id, trace_id, project_id, parent_span_id,
+            name, span_type, service_name,
+            started_at, ended_at, duration_ms,
+            status, attributes, events, replay_snapshot,
+            source, created_at
         FROM spans
         WHERE trace_id = %(trace_id)s
         ORDER BY started_at ASC
     """
 
     result = client.query(query, parameters={"trace_id": trace_id})
-    return result.result_rows
+    columns = ["span_id", "trace_id", "project_id", "parent_span_id",
+               "name", "span_type", "service_name", "started_at", "ended_at",
+               "duration_ms", "status", "attributes", "events", "replay_snapshot",
+               "source", "created_at"]
+    return [dict(zip(columns, row)) for row in result.result_rows]
 
 
 async def insert_trace(client: Client, trace_data: dict[str, Any]) -> None:
