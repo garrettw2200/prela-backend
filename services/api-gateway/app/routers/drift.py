@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _to_iso(value: Any) -> str:
+    """Convert a datetime or string to UTC ISO 8601 with Z suffix for safe JS parsing."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    s = str(value)
+    # Append Z if no timezone info present
+    if s and not s.endswith("Z") and "+" not in s:
+        return s + "Z"
+    return s
+
+
 # Request/Response Models
 
 
@@ -353,8 +366,8 @@ async def list_baselines(
                     "baseline_id": row[0],
                     "agent_name": row[1],
                     "service_name": row[2],
-                    "window_start": row[3].isoformat() if row[3] else None,
-                    "window_end": row[4].isoformat() if row[4] else None,
+                    "window_start": _to_iso(row[3]),
+                    "window_end": _to_iso(row[4]),
                     "sample_size": int(row[5]),
                     "duration_mean": float(row[6]),
                     "duration_stddev": float(row[7]),
@@ -551,8 +564,8 @@ async def check_drift(
                             "baseline_id": baseline["baseline_id"],
                             "agent_name": baseline["agent_name"],
                             "service_name": baseline["service_name"],
-                            "window_start": baseline["window_start"].isoformat(),
-                            "window_end": baseline["window_end"].isoformat(),
+                            "window_start": _to_iso(baseline["window_start"]),
+                            "window_end": _to_iso(baseline["window_end"]),
                             "sample_size": baseline["sample_size"],
                             "duration_mean": baseline["duration_mean"],
                             "duration_stddev": baseline["duration_stddev"],
@@ -565,7 +578,7 @@ async def check_drift(
                             "cost_mean": baseline["cost_mean"],
                             "cost_total": baseline["cost_total"],
                         },
-                        "detected_at": datetime.utcnow().isoformat(),
+                        "detected_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
                     }
                 )
 
