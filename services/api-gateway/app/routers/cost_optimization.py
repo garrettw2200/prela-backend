@@ -141,8 +141,8 @@ async def get_model_recommendations(
                 "total_tokens": row[3],
                 "prompt_tokens": row[4],
                 "completion_tokens": row[5],
-                "total_cost_usd": float(row[6]),
-                "avg_latency_ms": float(row[7]),
+                "total_cost_usd": float(row[6]) if row[6] is not None else 0.0,
+                "avg_latency_ms": float(row[7]) if row[7] is not None else 0.0,
                 "success_count": row[8],
                 "date_range_days": days,
             })
