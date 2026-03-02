@@ -118,7 +118,7 @@ async def debug_trace(
         except ValueError:
             raise HTTPException(
                 status_code=503,
-                detail="Debug analysis unavailable: OpenAI API key not configured",
+                detail="Debug analysis unavailable: Anthropic API key not configured",
             )
         analysis = agent.analyze_trace(
             trace_data=trace_row,

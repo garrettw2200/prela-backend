@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import yaml
-from openai import OpenAI
+import anthropic
 
 logger = logging.getLogger(__name__)
 
@@ -220,11 +220,11 @@ Respond ONLY with a JSON array, no other text:
 class EvalGenerator:
     """Generates eval test cases from production trace data."""
 
-    def __init__(self, openai_api_key: str | None = None):
-        api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+    def __init__(self, anthropic_api_key: str | None = None):
+        api_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("OpenAI API key required for eval generation")
-        self.client = OpenAI(api_key=api_key)
+            raise ValueError("Anthropic API key required for eval generation")
+        self.client = anthropic.Anthropic(api_key=api_key)
 
     def generate(
         self,
@@ -683,19 +683,13 @@ class EvalGenerator:
 
         # Call LLM
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.messages.create(
                 model=config.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an eval test case generator. Output ONLY valid JSON arrays.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.4,
                 max_tokens=config.max_tokens,
+                system="You are an eval test case generator. Output ONLY valid JSON arrays.",
+                messages=[{"role": "user", "content": prompt}],
             )
-            response_text = response.choices[0].message.content or "[]"
+            response_text = response.content[0].text if response.content else "[]"
         except Exception as e:
             logger.error(f"LLM call failed for pattern {pattern.label()}: {e}")
             # Fallback: generate a simple heuristic case

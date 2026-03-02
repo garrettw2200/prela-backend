@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from openai import OpenAI
+import anthropic
 
 logger = logging.getLogger(__name__)
 
@@ -86,11 +86,11 @@ def _row_to_dict(row: tuple | list, columns: list[str]) -> dict[str, Any]:
 class DebugAgent:
     """Analyzes traces and produces plain-English debug explanations."""
 
-    def __init__(self, openai_api_key: str | None = None):
-        api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+    def __init__(self, anthropic_api_key: str | None = None):
+        api_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("OpenAI API key required for debug analysis")
-        self.client = OpenAI(api_key=api_key)
+            raise ValueError("Anthropic API key required for debug analysis")
+        self.client = anthropic.Anthropic(api_key=api_key)
 
     def analyze_trace(
         self,
@@ -331,23 +331,17 @@ Be concise, practical, and developer-friendly. Avoid jargon where possible."""
         return "\n".join(details)
 
     def _call_openai(self, prompt: str, model: str, max_tokens: int) -> str:
-        """Call OpenAI API for debug analysis."""
+        """Call Anthropic API for debug analysis."""
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.messages.create(
                 model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a debugging assistant for AI agent traces. Be concise and practical.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
                 max_tokens=max_tokens,
+                system="You are a debugging assistant for AI agent traces. Be concise and practical.",
+                messages=[{"role": "user", "content": prompt}],
             )
-            return response.choices[0].message.content or ""
+            return response.content[0].text if response.content else ""
         except Exception as e:
-            logger.error(f"OpenAI API call failed: {e}")
+            logger.error(f"Anthropic API call failed: {e}")
             return self._get_fallback_response()
 
     def _get_fallback_response(self) -> str:

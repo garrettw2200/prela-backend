@@ -95,11 +95,11 @@ class Settings(BaseSettings):
     drift_baseline_refresh_hours: int = 1  # How often to recalculate baselines
 
     # Debug Agent (LLM-powered trace analysis)
-    debug_agent_model: str = "gpt-4o-mini"
+    debug_agent_model: str = "claude-haiku-4-5-20251001"
     debug_agent_max_tokens: int = 2000
 
     # Eval Generation (auto-generate eval suites from traces)
-    eval_generation_model: str = "gpt-4o-mini"
+    eval_generation_model: str = "claude-haiku-4-5-20251001"
     eval_generation_max_tokens: int = 4000
 
     class Config:

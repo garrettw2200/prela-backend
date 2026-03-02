@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
+import anthropic
 
 
 @dataclass
@@ -27,18 +27,18 @@ class ErrorExplanation:
 class ErrorExplainer:
     """Generates AI-powered explanations for agent errors."""
 
-    def __init__(self, openai_api_key: str | None = None):
+    def __init__(self, anthropic_api_key: str | None = None):
         """
         Initialize the error explainer.
 
         Args:
-            openai_api_key: OpenAI API key. If None, reads from OPENAI_API_KEY env var.
+            anthropic_api_key: Anthropic API key. If None, reads from ANTHROPIC_API_KEY env var.
         """
-        api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        api_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("OpenAI API key required for error explanations")
+            raise ValueError("Anthropic API key required for error explanations")
 
-        self.client = OpenAI(api_key=api_key)
+        self.client = anthropic.Anthropic(api_key=api_key)
 
     def explain_error(
         self, category: str, severity: str, error_message: str, context: dict[str, Any]
@@ -137,22 +137,15 @@ WHAT:
             return ""
 
     def _call_openai(self, prompt: str) -> str:
-        """Call OpenAI GPT-4o-mini API."""
+        """Call Anthropic Claude API."""
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful debugging assistant for AI agents. Be concise and practical.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,  # Low temperature for consistent, factual responses
-                max_tokens=300,  # Keep explanations concise
+            response = self.client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=300,
+                system="You are a helpful debugging assistant for AI agents. Be concise and practical.",
+                messages=[{"role": "user", "content": prompt}],
             )
-
-            return response.choices[0].message.content or ""
+            return response.content[0].text if response.content else ""
         except Exception as e:
             # Fallback to generic explanation if LLM fails
             return self._get_fallback_explanation()
