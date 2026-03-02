@@ -138,14 +138,14 @@ async def authenticate_and_check_rate_limit(
     if not result:
         raise HTTPException(
             status_code=401,
-            detail="Invalid API key. Generate a new API key at https://prela.app/settings"
+            detail="Invalid API key. Generate a new API key at https://dashboard.prela.dev/api-keys"
         )
 
     # Check subscription status
     if result["subscription_status"] not in ("active", "trialing"):
         raise HTTPException(
             status_code=403,
-            detail=f"Subscription {result['subscription_status']}. Please update your payment method at https://prela.app/billing"
+            detail=f"Subscription {result['subscription_status']}. Please update your payment method at https://dashboard.prela.dev/billing"
         )
 
     # Check rate limit
@@ -161,7 +161,7 @@ async def authenticate_and_check_rate_limit(
         raise HTTPException(
             status_code=429,
             detail=f"Monthly trace limit exceeded ({current_usage:,}/{limit_str} traces). "
-                   f"Upgrade at https://prela.app/pricing",
+                   f"Upgrade at https://dashboard.prela.dev/billing",
             headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
         )
 
