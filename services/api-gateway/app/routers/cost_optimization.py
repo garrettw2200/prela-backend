@@ -118,7 +118,7 @@ async def get_model_recommendations(
           AND date >= %(since_date)s
           {vendor_clause}
         GROUP BY model, vendor
-        HAVING SUM(call_count) > 0
+        HAVING call_count > 0
         ORDER BY total_cost_usd DESC
         """
 
