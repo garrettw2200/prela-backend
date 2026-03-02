@@ -82,7 +82,7 @@ class CostAnalyticsResponse(BaseModel):
 async def get_model_recommendations(
     project_id: str = Query(..., description="Project ID"),
     time_window: str = Query("30d", description="Time window (7d, 30d, 90d)"),
-    vendor: str = Query("all", description="Filter by vendor (openai, anthropic, all)"),
+    vendor: str = Query("all", pattern="^(openai|anthropic|all)$", description="Filter by vendor (openai, anthropic, all)"),
     user: dict = Depends(require_tier("free")),
 ) -> dict[str, Any]:
     """
@@ -99,7 +99,10 @@ async def get_model_recommendations(
         since_date = datetime.utcnow() - timedelta(days=days)
 
         # Query model usage from llm_usage_metrics materialized view
-        query = """
+        # Build vendor filter in Python to avoid ClickHouse parameter type inference issues
+        # with boolean expressions like `%(vendor)s = 'all'`
+        vendor_clause = "" if vendor == "all" else "AND vendor = %(vendor)s"
+        query = f"""
         SELECT
             model,
             vendor,
@@ -113,20 +116,20 @@ async def get_model_recommendations(
         FROM llm_usage_metrics
         WHERE project_id = %(project_id)s
           AND date >= %(since_date)s
-          AND (vendor = %(vendor)s OR %(vendor)s = 'all')
+          {vendor_clause}
         GROUP BY model, vendor
-        HAVING call_count > 0
+        HAVING SUM(call_count) > 0
         ORDER BY total_cost_usd DESC
         """
 
-        result = client.query(
-            query,
-            parameters={
-                "project_id": project_id,
-                "since_date": since_date.strftime("%Y-%m-%d"),
-                "vendor": vendor,
-            },
-        )
+        params: dict[str, Any] = {
+            "project_id": project_id,
+            "since_date": since_date.strftime("%Y-%m-%d"),
+        }
+        if vendor != "all":
+            params["vendor"] = vendor
+
+        result = client.query(query, parameters=params)
 
         # Convert to list of dicts
         usage_data = []
