@@ -150,7 +150,7 @@ async def list_executions(
                     "execution_id": row[1] or row[0],  # Fallback to trace_id
                     "framework": row[2],
                     "service_name": row[3],
-                    "status": row[4],
+                    "status": row[4].lower() if row[4] else row[4],
                     "started_at": row[5],
                     "duration_ms": row[6],
                     "num_agents": row[7] or 0,
@@ -284,11 +284,11 @@ async def get_execution(execution_id: str) -> dict[str, Any]:
             "trace_id": trace_id,
             "framework": attributes.get("framework", ""),
             "service_name": trace_row[1],
-            "status": trace_row[2],
+            "status": trace_row[2].lower() if trace_row[2] else trace_row[2],
             "started_at": trace_row[3],
             "ended_at": trace_row[4],
             "duration_ms": trace_row[5],
-            "agents_used": [a["agent_name"] for a in agents],
+            "agents_used": list(dict.fromkeys(a["agent_name"] for a in agents if a["agent_name"])),
             "handoffs": [],
             "tasks": [
                 {
@@ -357,13 +357,15 @@ async def get_communication_graph(execution_id: str) -> CommunicationGraph:
 
             # Extract agent node
             agent_id = span_attrs.get("agent.id") or span_attrs.get("agent.name")
-            if agent_id and agent_id not in agents_map:
-                agents_map[agent_id] = {
-                    "id": agent_id,
-                    "name": span_attrs.get("agent.name", agent_id),
-                    "role": span_attrs.get("agent.role", ""),
-                    "type": "agent",
-                }
+            if agent_id:
+                if agent_id not in agents_map:
+                    agents_map[agent_id] = {
+                        "id": agent_id,
+                        "label": span_attrs.get("agent.name", agent_id),
+                        "type": "agent",
+                        "invocations": 0,
+                    }
+                agents_map[agent_id]["invocations"] += 1
 
             # Extract communication edges
             sender = span_attrs.get("sender.name") or span_attrs.get("sender")
@@ -374,7 +376,8 @@ async def get_communication_graph(execution_id: str) -> CommunicationGraph:
                     {
                         "source": sender,
                         "target": recipient,
-                        "message": span_attrs.get("message.content", "")[:100],  # Truncate
+                        "type": "delegation",
+                        "count": 1,
                     }
                 )
 
@@ -451,18 +454,25 @@ async def get_execution_tasks(
         tasks = []
         for task_row in tasks_result.result_rows:
             task_attrs = json.loads(task_row[6]) if task_row[6] else {}
+            # Derive a human-readable task name from description or span name
+            description = task_attrs.get("task.description", "")
+            span_name = task_row[1] or ""
+            # Strip framework prefix (e.g. "crewai.task." -> just the description)
+            bare_name = span_name.split(".")[-1] if "." in span_name else span_name
+            task_name = description[:60] if description else bare_name
+
             tasks.append(
                 {
                     "span_id": task_row[0],
-                    "name": task_row[1],
-                    "task_id": task_attrs.get("task.id", ""),
-                    "description": task_attrs.get("task.description", ""),
+                    "task_id": task_attrs.get("task.id", task_row[0]),
+                    "task_name": task_name,
+                    "description": description,
                     "expected_output": task_attrs.get("task.expected_output", ""),
-                    "agent": task_attrs.get("agent.name", ""),
+                    "assigned_agent": task_attrs.get("agent.name", ""),
                     "started_at": task_row[2],
-                    "ended_at": task_row[3],
+                    "completed_at": task_row[3],
                     "duration_ms": task_row[4],
-                    "status": task_row[5],
+                    "status": task_row[5].lower() if task_row[5] else "pending",
                 }
             )
 
