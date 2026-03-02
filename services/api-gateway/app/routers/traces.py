@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 async def list_traces(
     project_id: str = Query(..., description="Project ID"),
     service_name: str | None = Query(None, description="Filter by service name"),
+    agent_name: str | None = Query(None, description="Filter by agent name"),
     start_time: str | None = Query(None, description="Start time (ISO format)"),
     end_time: str | None = Query(None, description="End time (ISO format)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of traces"),
@@ -26,6 +27,7 @@ async def list_traces(
     Args:
         project_id: Project ID to filter traces.
         service_name: Filter by service name.
+        agent_name: Filter by agent name (stored in trace attributes).
         start_time: Filter by start time (ISO format).
         end_time: Filter by end time (ISO format).
         limit: Maximum number of traces to return.
@@ -37,7 +39,8 @@ async def list_traces(
         client = get_clickhouse_client()
         traces = await query_traces(
             client, project_id=project_id, service_name=service_name,
-            start_time=start_time, end_time=end_time, limit=limit
+            agent_name=agent_name, start_time=start_time, end_time=end_time,
+            limit=limit
         )
         return {"traces": traces, "count": len(traces), "limit": limit}
     except Exception as e:

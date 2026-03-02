@@ -416,6 +416,7 @@ async def query_traces(
     client: Client,
     project_id: str | None = None,
     service_name: str | None = None,
+    agent_name: str | None = None,
     start_time: str | None = None,
     end_time: str | None = None,
     limit: int = 100,
@@ -426,6 +427,7 @@ async def query_traces(
         client: ClickHouse client instance.
         project_id: Filter by project ID.
         service_name: Filter by service name.
+        agent_name: Filter by agent name (stored in attributes JSON as 'agent.name').
         start_time: Filter by start time (ISO format).
         end_time: Filter by end time (ISO format).
         limit: Maximum number of traces to return.
@@ -443,6 +445,10 @@ async def query_traces(
     if service_name:
         conditions.append("service_name = %(service_name)s")
         params["service_name"] = service_name
+
+    if agent_name:
+        conditions.append("JSONExtractString(attributes, 'agent.name') = %(agent_name)s")
+        params["agent_name"] = agent_name
 
     if start_time:
         conditions.append("started_at >= %(start_time)s")
