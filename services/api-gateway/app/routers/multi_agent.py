@@ -463,6 +463,14 @@ async def get_execution_tasks(
             # Only include description separately if it has more content than the title
             extra_description = description if len(description) > len(task_name) else ""
 
+            # Derive assigned agent: prefer agent.name attribute, fall back to
+            # parsing the span name (e.g. "crewai.agent.writer" → "writer")
+            assigned_agent = task_attrs.get("agent.name", "")
+            if not assigned_agent:
+                parts = span_name.split(".")
+                if len(parts) >= 2 and parts[-2] == "agent":
+                    assigned_agent = parts[-1]
+
             tasks.append(
                 {
                     "span_id": task_row[0],
@@ -470,7 +478,7 @@ async def get_execution_tasks(
                     "task_name": task_name,
                     "description": extra_description,
                     "expected_output": task_attrs.get("task.expected_output", ""),
-                    "assigned_agent": task_attrs.get("agent.name", ""),
+                    "assigned_agent": assigned_agent,
                     "started_at": task_row[2],
                     "completed_at": task_row[3],
                     "duration_ms": task_row[4],
