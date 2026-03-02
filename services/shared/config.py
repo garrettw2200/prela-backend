@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     # Stripe Configuration
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
-    stripe_lunch_money_price_id: str = ""  # Price ID for $14/month
+    stripe_lunch_money_price_id: str = ""  # Price ID for $10/month
     stripe_pro_price_id: str = ""  # Price ID for $79/month base
 
     # Pro Tier Overage Price IDs (metered billing)
@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     stripe_pro_ai_nlp_price_id: str = ""  # $3 per 1k searches
     stripe_pro_retention_price_id: str = ""  # $10 per 30 days
     stripe_pro_ai_debug_price_id: str = ""  # $1 per 10 debug sessions
+    stripe_pro_ai_eval_price_id: str = ""  # $1 per 10 eval generations
 
     # Data Source Integration
     data_source_encryption_key: str = ""  # Fernet key for encrypting API secrets

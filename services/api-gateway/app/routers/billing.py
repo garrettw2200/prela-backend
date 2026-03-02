@@ -40,7 +40,7 @@ except ImportError:
 
 # Stripe price IDs (to be configured in Stripe dashboard)
 STRIPE_PRICES = {
-    "lunch-money": settings.stripe_lunch_money_price_id,  # $14/month
+    "lunch-money": settings.stripe_lunch_money_price_id,  # $10/month
     "pro": settings.stripe_pro_price_id,  # $79/month base
     "enterprise": None,  # Contact sales
 }
