@@ -288,9 +288,16 @@ async def get_execution(execution_id: str) -> dict[str, Any]:
             "started_at": trace_row[3],
             "ended_at": trace_row[4],
             "duration_ms": trace_row[5],
-            "agents": agents,
-            "tasks": tasks,
-            "messages": messages,
+            "agents_used": [a["agent_name"] for a in agents],
+            "handoffs": [],
+            "tasks": [
+                {
+                    "task_id": t["task_id"],
+                    "description": t["description"],
+                    "status": t["status"],
+                }
+                for t in tasks
+            ],
             "attributes": attributes,
             "span_count": len(spans_result.result_rows),
         }
