@@ -1,9 +1,9 @@
 """Data source management endpoints for external integrations."""
 
 import logging
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.auth import get_current_user
@@ -156,10 +156,11 @@ async def create_new_data_source(
 @router.get("")
 async def list_data_sources(
     user: dict = Depends(get_current_user),
+    project_id: Optional[str] = Query(default=None, description="Filter by Prela project ID"),
 ) -> list[dict[str, Any]]:
-    """List all data sources for the current user."""
+    """List all data sources for the current user, optionally scoped to a project."""
     user_id = str(user["user_id"])
-    sources = await get_data_sources_by_user_id(user_id)
+    sources = await get_data_sources_by_user_id(user_id, project_id=project_id)
     return [_serialize_data_source(s) for s in sources]
 
 

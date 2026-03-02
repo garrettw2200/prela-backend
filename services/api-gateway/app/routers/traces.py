@@ -18,9 +18,11 @@ async def list_traces(
     project_id: str = Query(..., description="Project ID"),
     service_name: str | None = Query(None, description="Filter by service name"),
     agent_name: str | None = Query(None, description="Filter by agent name"),
+    status: str | None = Query(None, description="Filter by status (success, error, failed, running)"),
     start_time: str | None = Query(None, description="Start time (ISO format)"),
     end_time: str | None = Query(None, description="End time (ISO format)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of traces"),
+    offset: int = Query(0, ge=0, description="Number of traces to skip"),
 ) -> dict[str, Any]:
     """List traces with optional filters.
 
@@ -28,9 +30,11 @@ async def list_traces(
         project_id: Project ID to filter traces.
         service_name: Filter by service name.
         agent_name: Filter by agent name (stored in trace attributes).
+        status: Filter by trace status.
         start_time: Filter by start time (ISO format).
         end_time: Filter by end time (ISO format).
         limit: Maximum number of traces to return.
+        offset: Number of traces to skip (for pagination).
 
     Returns:
         Dictionary with traces list and metadata.
@@ -40,9 +44,9 @@ async def list_traces(
         traces = await query_traces(
             client, project_id=project_id, service_name=service_name,
             agent_name=agent_name, start_time=start_time, end_time=end_time,
-            limit=limit
+            status=status, limit=limit, offset=offset,
         )
-        return {"traces": traces, "count": len(traces), "limit": limit}
+        return {"traces": traces, "count": len(traces), "limit": limit, "offset": offset}
     except Exception as e:
         logger.error(f"Failed to query traces: {e}")
         raise HTTPException(status_code=500, detail="Failed to query traces")

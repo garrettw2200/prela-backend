@@ -419,7 +419,9 @@ async def query_traces(
     agent_name: str | None = None,
     start_time: str | None = None,
     end_time: str | None = None,
+    status: str | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Query traces with optional filters.
 
@@ -430,7 +432,9 @@ async def query_traces(
         agent_name: Filter by agent name (stored in attributes JSON as 'agent.name').
         start_time: Filter by start time (ISO format).
         end_time: Filter by end time (ISO format).
+        status: Filter by trace status (e.g. 'success', 'error', 'failed', 'running').
         limit: Maximum number of traces to return.
+        offset: Number of traces to skip (for pagination).
 
     Returns:
         List of trace records as dicts.
@@ -466,6 +470,10 @@ async def query_traces(
         conditions.append("started_at <= %(end_time)s")
         params["end_time"] = end_time
 
+    if status:
+        conditions.append("status = %(status)s")
+        params["status"] = status
+
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     query = f"""
@@ -477,9 +485,10 @@ async def query_traces(
         FROM traces
         {where_clause}
         ORDER BY started_at DESC
-        LIMIT %(limit)s
+        LIMIT %(limit)s OFFSET %(offset)s
     """
     params["limit"] = limit
+    params["offset"] = offset
 
     result = client.query(query, parameters=params)
     columns = ["trace_id", "project_id", "service_name", "started_at", "completed_at",

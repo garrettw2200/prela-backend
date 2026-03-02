@@ -416,6 +416,7 @@ async def create_api_key(
     key_hash: str,
     key_prefix: str,
     name: str,
+    team_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a new API key.
 
@@ -424,37 +425,54 @@ async def create_api_key(
         key_hash: SHA256 hash of the API key.
         key_prefix: First 16 characters for display.
         name: Name/description for the key.
+        team_id: Optional team UUID. If set, key is team-scoped and visible to all members.
 
     Returns:
         Created API key record.
     """
     return await insert_returning(
         """
-        INSERT INTO api_keys (user_id, key_hash, key_prefix, name)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO api_keys (user_id, key_hash, key_prefix, name, team_id)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING *
         """,
         user_id,
         key_hash,
         key_prefix,
         name,
+        team_id,
     )
 
 
-async def get_api_keys_by_user_id(user_id: str) -> list[dict[str, Any]]:
-    """Get all API keys for a user.
+async def get_api_keys_by_user_id(
+    user_id: str,
+    team_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get API keys for a user or team.
 
     Args:
         user_id: User UUID.
+        team_id: If provided, returns all keys belonging to this team.
+                 If None, returns personal keys for the user (team_id IS NULL).
 
     Returns:
         List of API key records.
     """
+    if team_id is not None:
+        return await fetch_all(
+            """
+            SELECT id, key_prefix, name, last_used_at, created_at, user_id, team_id
+            FROM api_keys
+            WHERE team_id = $1
+            ORDER BY created_at DESC
+            """,
+            team_id,
+        )
     return await fetch_all(
         """
-        SELECT id, key_prefix, name, last_used_at, created_at
+        SELECT id, key_prefix, name, last_used_at, created_at, user_id, team_id
         FROM api_keys
-        WHERE user_id = $1
+        WHERE user_id = $1 AND team_id IS NULL
         ORDER BY created_at DESC
         """,
         user_id,
@@ -462,17 +480,35 @@ async def get_api_keys_by_user_id(user_id: str) -> list[dict[str, Any]]:
 
 
 async def delete_api_key(api_key_id: str, user_id: str) -> None:
-    """Delete an API key.
+    """Delete a personal API key.
 
     Args:
         api_key_id: API key UUID.
         user_id: User UUID (for authorization check).
     """
     await execute(
-        "DELETE FROM api_keys WHERE id = $1 AND user_id = $2",
+        "DELETE FROM api_keys WHERE id = $1 AND user_id = $2 AND team_id IS NULL",
         api_key_id,
         user_id,
     )
+
+
+async def delete_api_key_by_team(api_key_id: str, team_id: str) -> bool:
+    """Delete a team-owned API key.
+
+    Args:
+        api_key_id: API key UUID.
+        team_id: Team UUID (for authorization check).
+
+    Returns:
+        True if a row was deleted, False if not found.
+    """
+    result = await execute(
+        "DELETE FROM api_keys WHERE id = $1 AND team_id = $2",
+        api_key_id,
+        team_id,
+    )
+    return result == "DELETE 1"
 
 
 # Data source helper functions
@@ -513,15 +549,29 @@ async def create_data_source(
     )
 
 
-async def get_data_sources_by_user_id(user_id: str) -> list[dict[str, Any]]:
-    """Get all data sources for a user.
+async def get_data_sources_by_user_id(
+    user_id: str,
+    project_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get all data sources for a user, optionally filtered by project.
 
     Args:
         user_id: User UUID.
+        project_id: Optional Prela project ID to filter by.
 
     Returns:
         List of data source records.
     """
+    if project_id is not None:
+        return await fetch_all(
+            """
+            SELECT * FROM data_sources
+            WHERE user_id = $1 AND project_id = $2
+            ORDER BY created_at DESC
+            """,
+            user_id,
+            project_id,
+        )
     return await fetch_all(
         """
         SELECT * FROM data_sources
