@@ -447,7 +447,15 @@ async def query_traces(
         params["service_name"] = service_name
 
     if agent_name:
-        conditions.append("JSONExtractString(attributes, 'agent.name') = %(agent_name)s")
+        # Match on trace-level attributes OR any span's attributes (many traces
+        # store agent.name only on spans, not on the trace row itself)
+        conditions.append(
+            "(JSONExtractString(attributes, 'agent.name') = %(agent_name)s"
+            " OR trace_id IN ("
+            "SELECT DISTINCT trace_id FROM spans"
+            " WHERE JSONExtractString(attributes, 'agent.name') = %(agent_name)s"
+            "))"
+        )
         params["agent_name"] = agent_name
 
     if start_time:
