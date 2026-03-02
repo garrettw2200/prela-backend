@@ -1,5 +1,6 @@
 """n8n integration routes for Prela API Gateway."""
 
+import hashlib
 import json
 import logging
 import uuid
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from shared import cache_delete, cache_get, cache_set, settings
 from shared.clickhouse import get_clickhouse_client, insert_span, insert_trace
+from shared.database import verify_api_key as db_verify_api_key, update_api_key_last_used
 from shared.validation import InputValidator
 from shared.webhook_rate_limiter import get_webhook_rate_limiter
 
@@ -21,23 +23,32 @@ logger = logging.getLogger(__name__)
 
 
 # Authentication dependency
-async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
-    """Verify API key from request header.
+async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> dict[str, Any]:
+    """Verify API key from request header against database.
 
     Args:
         x_api_key: API key from X-API-Key header.
 
     Returns:
-        API key if valid.
+        User/subscription data dict if valid.
 
     Raises:
         HTTPException: If API key is invalid or missing.
     """
-    # TODO: Implement proper API key validation against database
-    # For now, accept any non-empty key
-    if not x_api_key or len(x_api_key) < 10:
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+
+    key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+    result = await db_verify_api_key(key_hash)
+
+    if not result:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    return x_api_key
+
+    if result["subscription_status"] not in ("active", "trialing"):
+        raise HTTPException(status_code=403, detail="Subscription inactive")
+
+    await update_api_key_last_used(result["api_key_id"])
+    return result
 
 
 # Request/Response Models
