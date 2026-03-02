@@ -195,7 +195,7 @@ async def get_execution(execution_id: str) -> dict[str, Any]:
                 service_name,
                 status,
                 started_at,
-                ended_at,
+                completed_at,
                 duration_ms,
                 attributes
             FROM traces
