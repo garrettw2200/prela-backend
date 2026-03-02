@@ -121,6 +121,8 @@ async def create_checkout_session(
             status_code=500,
             detail="Failed to create checkout session"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating checkout session: {e}")
         raise HTTPException(
@@ -185,6 +187,8 @@ async def create_portal_session(
             status_code=500,
             detail="Failed to create portal session"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating portal session: {e}")
         raise HTTPException(
@@ -512,6 +516,7 @@ async def get_subscription(user: dict = Depends(get_current_user)):
         )
 
     return {
+        "user_id": user["user_id"],
         "tier": subscription["tier"],
         "status": subscription["status"],
         "trace_limit": subscription["trace_limit"],
