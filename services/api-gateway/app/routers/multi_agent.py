@@ -460,13 +460,15 @@ async def get_execution_tasks(
             # Strip framework prefix (e.g. "crewai.task." -> just the description)
             bare_name = span_name.split(".")[-1] if "." in span_name else span_name
             task_name = description[:60] if description else bare_name
+            # Only include description separately if it has more content than the title
+            extra_description = description if len(description) > len(task_name) else ""
 
             tasks.append(
                 {
                     "span_id": task_row[0],
                     "task_id": task_attrs.get("task.id", task_row[0]),
                     "task_name": task_name,
-                    "description": description,
+                    "description": extra_description,
                     "expected_output": task_attrs.get("task.expected_output", ""),
                     "assigned_agent": task_attrs.get("agent.name", ""),
                     "started_at": task_row[2],
@@ -517,10 +519,10 @@ async def get_agent_performance(
 
         where_sql = " AND ".join(where_clauses)
 
-        # Query agent performance from spans
+        # Query agent performance from spans, grouped by name+framework only
+        # (agent.id varies per execution, which would create duplicate rows)
         query = f"""
             SELECT
-                JSONExtractString(attributes, 'agent.id') as agent_id,
                 JSONExtractString(attributes, 'agent.name') as agent_name,
                 JSONExtractString(attributes, 'framework') as framework,
                 COUNT(*) as total_executions,
@@ -529,8 +531,8 @@ async def get_agent_performance(
                 SUM(JSONExtractInt(attributes, 'total_tokens')) as total_tokens
             FROM spans
             WHERE {where_sql}
-              AND JSONExtractString(attributes, 'agent.id') != ''
-            GROUP BY agent_id, agent_name, framework
+              AND JSONExtractString(attributes, 'agent.name') != ''
+            GROUP BY agent_name, framework
             ORDER BY total_executions DESC
         """
 
@@ -541,13 +543,13 @@ async def get_agent_performance(
             agents.append(
                 {
                     "agent_id": row[0],
-                    "agent_name": row[1],
-                    "framework": row[2],
-                    "total_executions": row[3],
-                    "avg_duration_ms": round(row[4], 2) if row[4] else 0,
-                    "success_rate": round(row[5], 3) if row[5] else 0,
-                    "total_tokens": row[6] or 0,
-                    "total_cost_usd": 0.0,  # TODO: Calculate based on model and tokens
+                    "agent_name": row[0],
+                    "framework": row[1],
+                    "total_executions": row[2],
+                    "avg_duration_ms": round(row[3], 2) if row[3] else 0,
+                    "success_rate": round(row[4], 3) if row[4] else 0,
+                    "total_tokens": row[5] or 0,
+                    "total_cost_usd": 0.0,
                 }
             )
 
