@@ -548,9 +548,9 @@ async def analyze_hallucinations(
             ORDER BY started_at ASC
         """
 
-        result = client.execute(query, {"trace_id": trace_id})
+        result = client.query(query, parameters={"trace_id": trace_id})
 
-        if not result:
+        if not result.result_rows:
             raise HTTPException(
                 status_code=404, detail=f"No LLM spans found in trace {trace_id}"
             )
@@ -562,7 +562,7 @@ async def analyze_hallucinations(
 
         analyses = []
 
-        for row in result:
+        for row in result.result_rows:
             span_id, name, attributes_json, span_type = row
 
             # Parse attributes

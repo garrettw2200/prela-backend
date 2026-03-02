@@ -113,7 +113,13 @@ async def debug_trace(
             raise HTTPException(status_code=404, detail=f"No spans found for trace {trace_id}")
 
         # Run debug analysis
-        agent = DebugAgent()
+        try:
+            agent = DebugAgent()
+        except ValueError:
+            raise HTTPException(
+                status_code=503,
+                detail="Debug analysis unavailable: OpenAI API key not configured",
+            )
         analysis = agent.analyze_trace(
             trace_data=trace_row,
             spans_data=spans,
