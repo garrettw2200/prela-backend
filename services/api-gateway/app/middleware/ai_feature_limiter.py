@@ -7,14 +7,23 @@ import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
 
+# Lunch Money tier AI limits (hard caps — no overages, hard stop at limit)
+LUNCH_MONEY_LIMITS = {
+    "hallucination": 1_000,  # checks per month
+    "drift": 10,             # baselines per month
+    "debug": 50,             # sessions per month
+    "eval_generation": 25,   # generations per month
+    # nlp and security: Pro-only (not in this dict → 403)
+}
+
 # Pro tier AI limits (from PRICING_STRATEGY_V2.md)
 AI_LIMITS = {
     "hallucination": 10_000,  # per month
-    "drift": 50,  # baselines per month
+    "drift": 100,  # baselines per month
     "nlp": 1_000,  # searches per month
     "security": 10_000,  # scans per month
-    "debug": 50,  # sessions per month (Pro tier)
-    "eval_generation": 100,  # generations per month
+    "debug": 200,  # sessions per month (Pro tier)
+    "eval_generation": 250,  # generations per month
 }
 
 
@@ -88,21 +97,53 @@ class AIFeatureLimiter:
         Raises:
             HTTPException: If user doesn't have access to this feature
         """
-        # Only Pro and Enterprise tiers have AI features
-        if subscription_tier not in ["pro", "enterprise"]:
+        # Free tier: no AI features
+        if subscription_tier == "free":
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    f"AI feature '{feature}' requires Pro or Enterprise tier. "
-                    f"Current tier: '{subscription_tier}'. "
+                    f"AI feature '{feature}' requires Lunch Money or higher tier. "
                     f"Upgrade at: https://prela.app/pricing"
                 ),
             )
 
-        # Enterprise tier has unlimited usage
+        # Enterprise tier: unlimited usage
         if subscription_tier == "enterprise":
             return True, 0, None
 
+        # Lunch Money tier: fixed hard caps, no overages
+        if subscription_tier == "lunch-money":
+            limit = LUNCH_MONEY_LIMITS.get(feature)
+            if limit is None:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"AI feature '{feature}' requires Pro or Enterprise tier. "
+                        f"Current tier: 'lunch-money'. "
+                        f"Upgrade at: https://prela.app/pricing"
+                    ),
+                )
+            r = await self.get_redis()
+            usage_key = self._get_usage_key(user_id, feature)
+            try:
+                current_usage = await r.get(usage_key)
+                current_usage = int(current_usage) if current_usage else 0
+                if current_usage + increment > limit:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=(
+                            f"AI feature '{feature}' monthly limit reached: {current_usage}/{limit}. "
+                            f"Upgrade to Pro for higher limits and pay-as-you-go overages."
+                        ),
+                    )
+                return True, current_usage, limit
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error checking Lunch Money AI feature limit: {e}")
+                return True, 0, limit
+
+        # Pro tier: overages allowed up to soft cap
         # Get limit for this feature
         limit = AI_LIMITS.get(feature, 0)
 
