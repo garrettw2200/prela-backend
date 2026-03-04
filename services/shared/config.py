@@ -19,12 +19,13 @@ class Settings(BaseSettings):
     # Database (Railway Postgres)
     database_url: str = ""
 
-    # ClickHouse Cloud
+    # ClickHouse
     clickhouse_host: str = ""
     clickhouse_user: str = "default"
     clickhouse_password: str = ""
     clickhouse_port: int = 8443
     clickhouse_database: str = "prela"
+    clickhouse_secure: bool = True  # False for self-hosted via Tailscale/railtail
 
     # Upstash Kafka
     kafka_bootstrap_servers: str = ""

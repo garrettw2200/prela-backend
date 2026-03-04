@@ -1,4 +1,4 @@
-"""ClickHouse Cloud client utilities."""
+"""ClickHouse client utilities."""
 
 import logging
 from typing import Any
@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 def get_clickhouse_client() -> Client:
-    """Get ClickHouse Cloud client with secure connection.
+    """Get ClickHouse client with configurable secure connection.
 
     Returns:
-        ClickHouse client instance configured for ClickHouse Cloud.
+        ClickHouse client instance.
 
     Raises:
         Exception: If connection fails.
@@ -27,9 +27,9 @@ def get_clickhouse_client() -> Client:
             username=settings.clickhouse_user,
             password=settings.clickhouse_password,
             database=settings.clickhouse_database,
-            secure=True,  # Required for ClickHouse Cloud
+            secure=settings.clickhouse_secure,
         )
-        logger.info(f"Connected to ClickHouse Cloud: {settings.clickhouse_host}")
+        logger.info(f"Connected to ClickHouse: {settings.clickhouse_host}:{settings.clickhouse_port}")
         return client
     except Exception as e:
         logger.error(f"Failed to connect to ClickHouse: {e}")
