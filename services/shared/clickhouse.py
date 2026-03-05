@@ -1,7 +1,9 @@
 """ClickHouse client utilities."""
 
 import logging
-from typing import Any
+import threading
+import time
+from typing import Any, Optional
 
 import clickhouse_connect
 from clickhouse_connect.driver import Client
@@ -10,32 +12,71 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
+_client: Optional[Client] = None
+_client_lock = threading.Lock()
+
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 5  # seconds
+
 
 def get_clickhouse_client() -> Client:
-    """Get ClickHouse client with configurable secure connection.
+    """Get or create a singleton ClickHouse client.
 
-    Returns:
-        ClickHouse client instance.
-
-    Raises:
-        Exception: If connection fails.
+    Uses a module-level singleton so the expensive init query
+    (SELECT system.settings LIMIT 10000) runs only once per process.
+    Thread-safe via a lock. Retries with exponential backoff on failure.
     """
-    try:
-        client = clickhouse_connect.get_client(
-            host=settings.clickhouse_host,
-            port=settings.clickhouse_port,
-            username=settings.clickhouse_user,
-            password=settings.clickhouse_password,
-            database=settings.clickhouse_database,
-            secure=settings.clickhouse_secure,
-            connect_timeout=30,
-            send_receive_timeout=120,
-        )
-        logger.info(f"Connected to ClickHouse: {settings.clickhouse_host}:{settings.clickhouse_port}")
-        return client
-    except Exception as e:
-        logger.error(f"Failed to connect to ClickHouse: {e}")
-        raise
+    global _client
+
+    # Fast path: client already exists and is usable
+    if _client is not None:
+        try:
+            _client.command("SELECT 1")
+            return _client
+        except Exception:
+            logger.warning("Existing ClickHouse client is stale, reconnecting")
+            _client = None
+
+    with _client_lock:
+        # Double-check after acquiring lock
+        if _client is not None:
+            try:
+                _client.command("SELECT 1")
+                return _client
+            except Exception:
+                _client = None
+
+        last_error = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                client = clickhouse_connect.get_client(
+                    host=settings.clickhouse_host,
+                    port=settings.clickhouse_port,
+                    username=settings.clickhouse_user,
+                    password=settings.clickhouse_password,
+                    database=settings.clickhouse_database,
+                    secure=settings.clickhouse_secure,
+                    connect_timeout=30,
+                    send_receive_timeout=300,
+                )
+                logger.info(
+                    f"Connected to ClickHouse: {settings.clickhouse_host}:{settings.clickhouse_port} "
+                    f"(attempt {attempt}/{_MAX_RETRIES})"
+                )
+                _client = client
+                return _client
+            except Exception as e:
+                last_error = e
+                wait = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
+                logger.warning(
+                    f"ClickHouse connection attempt {attempt}/{_MAX_RETRIES} failed: {e}. "
+                    f"Retrying in {wait}s..."
+                )
+                if attempt < _MAX_RETRIES:
+                    time.sleep(wait)
+
+        logger.error(f"Failed to connect to ClickHouse after {_MAX_RETRIES} attempts: {last_error}")
+        raise last_error
 
 
 async def init_clickhouse_schema(client: Client) -> None:

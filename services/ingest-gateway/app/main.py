@@ -52,6 +52,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 # Global ClickHouse client
 clickhouse_client = None
+_schema_initialized = False
+
+
+async def _ensure_clickhouse():
+    """Ensure ClickHouse client is initialized, retrying if startup failed."""
+    global clickhouse_client, _schema_initialized
+    if clickhouse_client is None:
+        clickhouse_client = get_clickhouse_client()
+        logger.info("ClickHouse client initialized (deferred)")
+    if not _schema_initialized:
+        await init_clickhouse_schema(clickhouse_client)
+        _schema_initialized = True
+        logger.info("ClickHouse schema initialized (deferred)")
 
 # HTTP Bearer security scheme
 http_bearer = HTTPBearer(auto_error=False)
@@ -65,10 +78,15 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting Ingest Gateway ({settings.environment})")
 
     # Initialize ClickHouse client and ensure schema exists
-    clickhouse_client = get_clickhouse_client()
-    logger.info("ClickHouse client initialized")
-    await init_clickhouse_schema(clickhouse_client)
-    logger.info("ClickHouse schema initialized")
+    try:
+        clickhouse_client = get_clickhouse_client()
+        logger.info("ClickHouse client initialized")
+        await init_clickhouse_schema(clickhouse_client)
+        _schema_initialized = True
+        logger.info("ClickHouse schema initialized")
+    except Exception as e:
+        logger.error(f"ClickHouse init failed, will retry on first request: {e}")
+        clickhouse_client = None
 
     # Initialize rate limiter
     await get_rate_limiter()
@@ -209,6 +227,7 @@ async def ingest_trace(
     import json
 
     try:
+        await _ensure_clickhouse()
         trace_data = await request.json()
 
         # Validate required fields
@@ -342,6 +361,7 @@ async def ingest_span(
     import json
 
     try:
+        await _ensure_clickhouse()
         span_data = await request.json()
 
         # Validate required fields
@@ -405,6 +425,7 @@ async def ingest_batch(
     import zlib
 
     try:
+        await _ensure_clickhouse()
         # Handle gzip compression if present
         content_encoding = request.headers.get("content-encoding", "").lower()
         body = await request.body()
@@ -577,6 +598,7 @@ async def ingest_otlp_traces(
     import zlib
 
     try:
+        await _ensure_clickhouse()
         # Handle gzip decompression
         content_encoding = request.headers.get("content-encoding", "").lower()
         body = await request.body()
