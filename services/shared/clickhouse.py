@@ -57,7 +57,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         )
         ENGINE = MergeTree()
         ORDER BY (project_id, created_at)
-        TTL created_at + INTERVAL 365 DAY
+        TTL toDateTime(created_at) + INTERVAL 365 DAY
         """
     )
 
@@ -81,7 +81,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         ENGINE = MergeTree()
         ORDER BY (project_id, service_name, started_at, trace_id)
         PARTITION BY (project_id, toYYYYMM(started_at))
-        TTL started_at + INTERVAL 90 DAY
+        TTL toDateTime(started_at) + INTERVAL 90 DAY
         """
     )
 
@@ -109,7 +109,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         ENGINE = MergeTree()
         ORDER BY (project_id, trace_id, started_at, span_id)
         PARTITION BY (project_id, toYYYYMM(started_at))
-        TTL started_at + INTERVAL 90 DAY
+        TTL toDateTime(started_at) + INTERVAL 90 DAY
         """
     )
 
@@ -127,7 +127,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         ENGINE = MergeTree()
         ORDER BY (project_id, key, value, trace_id, span_id)
         PARTITION BY (project_id, toYYYYMM(started_at))
-        TTL started_at + INTERVAL 90 DAY
+        TTL toDateTime(started_at) + INTERVAL 90 DAY
         """
     )
 
@@ -150,7 +150,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         ENGINE = MergeTree()
         ORDER BY (project_id, triggered_at, execution_id)
         PARTITION BY (project_id, toYYYYMM(triggered_at))
-        TTL triggered_at + INTERVAL 90 DAY
+        TTL toDateTime(triggered_at) + INTERVAL 90 DAY
         """
     )
 
@@ -278,7 +278,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         ENGINE = ReplacingMergeTree(updated_at)
         ORDER BY (project_id, agent_name, service_name, window_start)
         PARTITION BY (project_id, toYYYYMM(window_start))
-        TTL window_start + INTERVAL 90 DAY
+        TTL toDateTime(window_start) + INTERVAL 90 DAY
         """
     )
 
@@ -308,7 +308,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         ENGINE = ReplacingMergeTree(updated_at)
         ORDER BY (project_id, severity, detected_at, alert_id)
         PARTITION BY (project_id, toYYYYMM(detected_at))
-        TTL detected_at + INTERVAL 90 DAY
+        TTL toDateTime(detected_at) + INTERVAL 90 DAY
         """
     )
 
@@ -360,7 +360,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         )
         ENGINE = ReplacingMergeTree(created_at)
         ORDER BY (project_id, analysis_type, trace_id)
-        TTL created_at + INTERVAL 90 DAY
+        TTL toDateTime(created_at) + INTERVAL 90 DAY
         """
     )
 
@@ -386,7 +386,7 @@ async def init_clickhouse_schema(client: Client) -> None:
         ENGINE = MergeTree()
         ORDER BY (project_id, created_at, batch_id)
         PARTITION BY (project_id, toYYYYMM(created_at))
-        TTL created_at + INTERVAL 90 DAY
+        TTL toDateTime(created_at) + INTERVAL 90 DAY
         """
     )
 
