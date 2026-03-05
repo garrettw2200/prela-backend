@@ -28,6 +28,8 @@ def get_clickhouse_client() -> Client:
             password=settings.clickhouse_password,
             database=settings.clickhouse_database,
             secure=settings.clickhouse_secure,
+            connect_timeout=30,
+            send_receive_timeout=120,
         )
         logger.info(f"Connected to ClickHouse: {settings.clickhouse_host}:{settings.clickhouse_port}")
         return client
