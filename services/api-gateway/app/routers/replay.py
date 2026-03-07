@@ -573,13 +573,13 @@ async def list_replay_traces(
     await check_project_access_or_403(str(user.get("user_id", "")), project_id)
 
     # Build parameterized WHERE clause
-    where_conditions = ["service_name LIKE %(project_pattern)s"]
+    where_conditions = ["t.service_name LIKE %(project_pattern)s"]
     params = {"project_pattern": f"%{project_id}%"}
 
     if since:
         # Validate timestamp format
         since = InputValidator.validate_timestamp(since, "since")
-        where_conditions.append("started_at >= %(since)s")
+        where_conditions.append("t.started_at >= %(since)s")
         params["since"] = since
 
     where_clause = " AND ".join(where_conditions)
@@ -587,7 +587,7 @@ async def list_replay_traces(
     # Count total with parameterized query
     count_query = f"""
         SELECT count() as total
-        FROM traces
+        FROM traces t
         WHERE {where_clause}
     """
 
@@ -603,18 +603,24 @@ async def list_replay_traces(
 
     query = f"""
         SELECT
-            trace_id,
-            service_name,
-            started_at,
-            duration_ms,
-            JSONExtractInt(attributes, 'total_tokens') as total_tokens,
-            JSONExtractFloat(attributes, 'total_cost_usd') as total_cost_usd,
+            t.trace_id,
+            t.service_name,
+            t.started_at,
+            t.duration_ms,
+            JSONExtractInt(t.attributes, 'total_tokens') as total_tokens,
+            JSONExtractFloat(t.attributes, 'total_cost_usd') as total_cost_usd,
             1 as has_replay_snapshot,
-            (SELECT count() FROM spans WHERE spans.trace_id = traces.trace_id) as span_count,
-            (SELECT count() FROM spans WHERE spans.trace_id = traces.trace_id AND span_type = 'llm') as llm_span_count
-        FROM traces
+            t.span_count,
+            coalesce(s.llm_span_count, 0) as llm_span_count
+        FROM traces t
+        LEFT JOIN (
+            SELECT trace_id, count() as llm_span_count
+            FROM spans
+            WHERE span_type = 'llm'
+            GROUP BY trace_id
+        ) s ON t.trace_id = s.trace_id
         WHERE {where_clause}
-        ORDER BY started_at DESC
+        ORDER BY t.started_at DESC
         LIMIT %(page_size)s OFFSET %(offset)s
     """
 
