@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # Team Collaboration
     teams_enabled: bool = True  # Feature flag for team features (TEAMS_ENABLED env var)
 
+    # Alerting
+    alert_check_interval_minutes: int = 5  # How often to evaluate generic alert rules
+
     # Drift Detection
     drift_check_interval_minutes: int = 15  # How often to check for anomalies
     drift_baseline_refresh_hours: int = 1  # How often to recalculate baselines

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 
-from .routers import api_keys, billing, comments, cost_optimization, data_sources, debug, drift, errors, eval_generation, health, insights, multi_agent, n8n, projects, replay, security, teams, traces
+from .routers import alerts, api_keys, billing, comments, cost_optimization, data_sources, debug, drift, errors, eval_generation, guardrails, health, insights, multi_agent, n8n, projects, prompts, replay, security, teams, traces
 from .websocket import websocket_endpoint
 from shared import settings
 
@@ -49,12 +49,18 @@ async def lifespan(app: FastAPI):
 
     drift_task = asyncio.create_task(background_drift_detection_loop())
 
+    # Start background alert evaluation loop
+    from .services.alert_evaluation import background_alert_evaluation_loop
+
+    alert_task = asyncio.create_task(background_alert_evaluation_loop())
+
     yield
 
     # Cancel background tasks on shutdown
     sync_task.cancel()
     security_scan_task.cancel()
     drift_task.cancel()
+    alert_task.cancel()
     try:
         await sync_task
     except asyncio.CancelledError:
@@ -65,6 +71,10 @@ async def lifespan(app: FastAPI):
         pass
     try:
         await drift_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await alert_task
     except asyncio.CancelledError:
         pass
 
@@ -91,6 +101,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(api_keys.router, tags=["api-keys"])
@@ -109,6 +120,8 @@ app.include_router(eval_generation.router, prefix="/api/v1/eval-generation", tag
 app.include_router(data_sources.router, tags=["data-sources"])
 app.include_router(teams.router, tags=["teams"])
 app.include_router(comments.router, tags=["comments"])
+app.include_router(prompts.router, prefix="/api/v1/prompts", tags=["prompts"])
+app.include_router(guardrails.router, prefix="/api/v1/guardrails", tags=["guardrails"])
 
 
 @app.websocket("/api/v1/ws/{project_id}")

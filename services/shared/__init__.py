@@ -64,6 +64,7 @@ from .redis import (
 )
 from .notifications import (
     send_email_notification,
+    send_pagerduty_notification,
     send_slack_notification,
     format_drift_alert_email,
     format_drift_alert_slack,
@@ -106,6 +107,7 @@ __all__ = [
     "publish_event",
     "subscribe_to_channel",
     "send_email_notification",
+    "send_pagerduty_notification",
     "send_slack_notification",
     "format_drift_alert_email",
     "format_drift_alert_slack",

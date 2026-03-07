@@ -16,6 +16,7 @@ OVERAGE_PRICING = {
     "ai_nlp_per_1k": Decimal("3.00"),
     "retention_per_30_days": Decimal("10.00"),
     "ai_debug_per_10": Decimal("1.00"),
+    "ai_eval_per_10": Decimal("1.00"),
 }
 
 # Base inclusions for Pro tier
@@ -23,10 +24,11 @@ PRO_BASE_LIMITS = {
     "traces": 1_000_000,
     "users": 5,
     "ai_hallucination_checks": 10_000,
-    "ai_drift_baselines": 50,
+    "ai_drift_baselines": 100,
     "ai_nlp_searches": 1_000,
     "retention_days": 90,
-    "ai_debug_sessions": 50,
+    "ai_debug_sessions": 200,
+    "ai_eval_generations": 250,
 }
 
 
@@ -154,6 +156,19 @@ class OverageTracker:
                 f"Debug session overage: {overage_sessions} sessions = ${overages['ai_debug']}"
             )
 
+        # Calculate eval generation overages
+        if usage.get("ai_eval_generations", 0) > PRO_BASE_LIMITS["ai_eval_generations"]:
+            overage_evals = (
+                usage["ai_eval_generations"] - PRO_BASE_LIMITS["ai_eval_generations"]
+            )
+            overage_units = Decimal(overage_evals) / Decimal(10)  # Per 10
+            cost = overage_units * OVERAGE_PRICING["ai_eval_per_10"]
+            overages["ai_eval"] = cost.quantize(Decimal("0.01"))
+            total += overages["ai_eval"]
+            logger.info(
+                f"Eval generation overage: {overage_evals} generations = ${overages['ai_eval']}"
+            )
+
         # Calculate retention overages
         if usage.get("retention_days", 90) > PRO_BASE_LIMITS["retention_days"]:
             overage_days = usage["retention_days"] - PRO_BASE_LIMITS["retention_days"]
@@ -223,12 +238,17 @@ class OverageTracker:
                     ai_debug_sessions_used,
                     ai_debug_sessions_overage,
                     ai_debug_sessions_cost,
+                    ai_eval_generations_included,
+                    ai_eval_generations_used,
+                    ai_eval_generations_overage,
+                    ai_eval_generations_cost,
                     retention_days_included,
                     retention_days_used,
                     retention_overage_cost,
                     total_overage_cost
                 ) VALUES (
                     %s, %s, %s,
+                    %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
@@ -290,6 +310,15 @@ class OverageTracker:
                     - PRO_BASE_LIMITS["ai_debug_sessions"],
                 ),
                 overages.get("ai_debug", Decimal("0.00")),
+                # AI eval
+                PRO_BASE_LIMITS["ai_eval_generations"],
+                usage.get("ai_eval_generations", 0),
+                max(
+                    0,
+                    usage.get("ai_eval_generations", 0)
+                    - PRO_BASE_LIMITS["ai_eval_generations"],
+                ),
+                overages.get("ai_eval", Decimal("0.00")),
                 # Retention
                 PRO_BASE_LIMITS["retention_days"],
                 usage.get("retention_days", 90),
@@ -344,6 +373,7 @@ class OverageTracker:
                 "ai_drift": "AI drift baseline overage",
                 "ai_nlp": "AI NLP search overage",
                 "ai_debug": "AI debug session overage",
+                "ai_eval": "AI eval generation overage",
                 "retention": "Extended retention overage",
             }
 
@@ -417,6 +447,7 @@ async def get_usage_for_period(
             ("drift", "ai_drift_baselines"),
             ("nlp", "ai_nlp_searches"),
             ("debug", "ai_debug_sessions"),
+            ("eval_generation", "ai_eval_generations"),
         ]:
             usage[key] = await limiter.get_usage(subscription_id, feature)
     except Exception as e:

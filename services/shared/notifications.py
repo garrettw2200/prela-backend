@@ -121,6 +121,59 @@ async def send_slack_notification(
         return False
 
 
+async def send_pagerduty_notification(
+    routing_key: str,
+    summary: str,
+    severity: str = "warning",
+    source: str = "prela",
+    details: dict[str, Any] | None = None,
+    dedup_key: str | None = None,
+) -> bool:
+    """Send PagerDuty notification via Events API v2.
+
+    Args:
+        routing_key: PagerDuty integration/routing key.
+        summary: Alert summary (max 1024 chars).
+        severity: One of "critical", "error", "warning", "info".
+        source: Source of the alert.
+        details: Custom details dict.
+        dedup_key: Deduplication key to group related alerts.
+
+    Returns:
+        True if sent successfully, False otherwise.
+    """
+    try:
+        payload = {
+            "routing_key": routing_key,
+            "event_action": "trigger",
+            "dedup_key": dedup_key,
+            "payload": {
+                "summary": summary[:1024],
+                "severity": severity,
+                "source": source,
+                "custom_details": details or {},
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "https://events.pagerduty.com/v2/enqueue",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+
+            if response.status_code not in (200, 201, 202):
+                logger.error(f"PagerDuty API failed: {response.status_code} {response.text}")
+                return False
+
+            logger.info("PagerDuty notification sent successfully")
+            return True
+
+    except Exception as e:
+        logger.error(f"Failed to send PagerDuty notification: {e}")
+        return False
+
+
 def format_drift_alert_email(
     agent_name: str,
     severity: str,
