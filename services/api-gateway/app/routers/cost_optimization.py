@@ -106,20 +106,20 @@ async def get_model_recommendations(
         SELECT
             model,
             vendor,
-            SUM(call_count) as call_count,
-            SUM(total_tokens) as total_tokens,
-            SUM(prompt_tokens) as prompt_tokens,
-            SUM(completion_tokens) as completion_tokens,
-            SUM(total_cost_usd) as total_cost_usd,
-            AVG(avg_latency_ms) as avg_latency_ms,
-            SUM(call_count) as success_count
+            SUM(call_count) as total_call_count,
+            SUM(total_tokens) as total_tokens_sum,
+            SUM(prompt_tokens) as prompt_tokens_sum,
+            SUM(completion_tokens) as completion_tokens_sum,
+            SUM(total_cost_usd) as total_cost_sum,
+            AVG(avg_latency_ms) as avg_latency,
+            SUM(call_count) as success_count_sum
         FROM llm_usage_metrics
         WHERE project_id = %(project_id)s
           AND date >= %(since_date)s
           {vendor_clause}
         GROUP BY model, vendor
-        HAVING call_count > 0
-        ORDER BY total_cost_usd DESC
+        HAVING total_call_count > 0
+        ORDER BY total_cost_sum DESC
         """
 
         params: dict[str, Any] = {
